@@ -5,6 +5,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { test, before, after } from 'node:test';
 import { WebSocket } from 'ws';
 
+import { MAGIC, PROTO_VERSION } from '../dist/protocol.js';
+
 const PORT = 8799;
 const BASE = `http://127.0.0.1:${PORT}`;
 const WS_URL = `ws://127.0.0.1:${PORT}/ws`;
@@ -33,8 +35,8 @@ async function createRoom() {
 
 function frame(seq, extra = 8) {
   const buf = Buffer.alloc(12 + extra);
-  buf.writeUInt32LE(0x52325343, 0);
-  buf.writeUInt16LE(1, 4);
+  buf.writeUInt32LE(MAGIC, 0);
+  buf.writeUInt16LE(PROTO_VERSION, 4);
   buf.writeUInt16LE(1, 6);
   buf.writeUInt32LE(seq, 8);
   for (let i = 12; i < buf.length; i++) buf[i] = (seq + i) & 0xff;
@@ -69,7 +71,7 @@ function connect() {
   return { ws, messages, waitFor };
 }
 
-async function hello(ws, role, room, token, proto = 1) {
+async function hello(ws, role, room, token, proto = PROTO_VERSION) {
   ws.send(JSON.stringify({ t: 'hello', role, room, token, proto }));
 }
 
@@ -100,7 +102,7 @@ test('room creation returns credentials', async () => {
   assert.match(room.room, /^[2-9A-HJKMNP-Z]{6}$/);
   assert.ok(room.hostToken.length >= 20);
   assert.ok(room.viewerKey.length >= 10);
-  assert.equal(room.proto, 1);
+  assert.equal(room.proto, PROTO_VERSION);
 });
 
 test('host publishes, viewer receives identical frames', async () => {
