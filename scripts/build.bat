@@ -42,6 +42,10 @@ set SRCS=scripts\msvc\compatibility.cpp ^
          src/common.cpp ^
          src/config/Config.cpp ^
          src/core/engine/cache/Cache.cpp ^
+         src/core/engine/features/Aimbot.cpp ^
+         src/core/engine/features/TriggerBot.cpp ^
+         src/core/engine/features/AntiFlash.cpp ^
+         src/core/engine/features/Bhop.cpp ^
          src/core/engine/classes/Bomb.cpp ^
          src/core/engine/Engine.cpp ^
          src/core/engine/classes/Game.cpp ^
