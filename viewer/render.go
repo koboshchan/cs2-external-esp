@@ -1,5 +1,3 @@
-//go:build !headless
-
 package main
 
 // Ebiten window: draws boxes, skeletons, health and flags for the selected
@@ -10,6 +8,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -30,10 +29,13 @@ type uiGame struct {
 	relay    *Relay
 	opts     options
 	selected int8 // -1 = auto
+
+	start   time.Time
+	lastLog time.Time
 }
 
 func runUI(ctx context.Context, relay *Relay, o options) error {
-	g := &uiGame{relay: relay, opts: o, selected: -1}
+	g := &uiGame{relay: relay, opts: o, selected: -1, start: time.Now(), lastLog: time.Now()}
 
 	ebiten.SetWindowTitle("cs2 remote viewer")
 	ebiten.SetWindowSize(1280, 720)
@@ -45,6 +47,17 @@ func runUI(ctx context.Context, relay *Relay, o options) error {
 func (g *uiGame) Update() error {
 	if ebiten.IsKeyPressed(ebiten.KeyEscape) {
 		return ebiten.Termination
+	}
+
+	if g.opts.seconds > 0 && time.Since(g.start) > time.Duration(g.opts.seconds)*time.Second {
+		return ebiten.Termination
+	}
+
+	if time.Since(g.lastLog) > 2*time.Second {
+		g.lastLog = time.Now()
+		snap := g.relay.Snapshot()
+		fmt.Printf("connected=%v host=%v frames=%d bytes=%d gaps=%d age=%s\n",
+			snap.Status.Connected, snap.Status.HostOnline, snap.Frames, snap.Bytes, snap.Gaps, ageOf(snap.FrameAt))
 	}
 
 	if inpututil.IsKeyJustPressed(ebiten.KeyTab) {
@@ -276,6 +289,13 @@ func drawGrid(dst *ebiten.Image, w, h float32) {
 	for y := float32(0); y < h; y += 64 {
 		ebitenutil.DrawRect(dst, 0, float64(y), float64(w), 1, grid)
 	}
+}
+
+func ageOf(t time.Time) string {
+	if t.IsZero() {
+		return "n/a"
+	}
+	return time.Since(t).Round(time.Millisecond).String()
 }
 
 func truncate(s string, n int) string {

@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 )
 
 const defaultServer = "wss://cs2.kjt.lol/ws"
@@ -65,7 +64,6 @@ type options struct {
 	key      string
 	me       string
 	meIndex  int
-	headless bool
 	seconds  int
 }
 
@@ -77,8 +75,7 @@ func parseFlags() options {
 	flag.StringVar(&o.key, "key", "", "viewer key from the host")
 	flag.StringVar(&o.me, "me", "", "your steam id or player name")
 	flag.IntVar(&o.meIndex, "me-index", -1, "your player index (fallback when ids are hidden)")
-	flag.BoolVar(&o.headless, "headless", false, "connect and print stats without a window")
-	flag.IntVar(&o.seconds, "seconds", 0, "exit after N seconds (headless default 10)")
+	flag.IntVar(&o.seconds, "seconds", 0, "quit after N seconds (0 = run until ESC)")
 	flag.Parse()
 
 	o.server = resolveServerURL(o.server)
@@ -104,15 +101,30 @@ func main() {
 
 	go relay.Run(ctx)
 
-	if o.headless {
-		runHeadless(ctx, relay, o)
-		return
-	}
-
 	if err := runUI(ctx, relay, o); err != nil {
 		fmt.Fprintln(os.Stderr, "viewer stopped:", err)
 		os.Exit(1)
 	}
+
+	printSummary(relay, o)
+}
+
+func printSummary(relay *Relay, o options) {
+	snap := relay.Snapshot()
+
+	me := ""
+	projected, visible := 0, 0
+	var cameraError float32
+
+	if snap.Frame != nil {
+		if p := selectPlayer(snap.Frame, o); p != nil {
+			me = p.Name
+		}
+		projected, visible, cameraError = projectionStats(snap.Frame, o)
+	}
+
+	fmt.Printf("\nsummary: frames=%d bytes=%d gaps=%d players=%d you=%q projected=%d on_screen=%d camera_error=%.6f\n",
+		snap.Frames, snap.Bytes, snap.Gaps, playerCount(snap.Frame), me, projected, visible, cameraError)
 }
 
 func selectPlayer(f *Frame, o options) *Player {
@@ -141,59 +153,6 @@ func selectPlayer(f *Frame, o options) *Player {
 		}
 	}
 	return nil
-}
-
-func runHeadless(ctx context.Context, relay *Relay, o options) {
-	seconds := o.seconds
-	if seconds <= 0 {
-		seconds = 10
-	}
-
-	deadline := time.After(time.Duration(seconds) * time.Second)
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	var last RelaySnapshot
-	var projected, visible int
-	var maxCameraError float32
-	var meName string
-
-	for {
-		select {
-		case <-ctx.Done():
-			report(last, meName, projected, visible, maxCameraError)
-			return
-		case <-deadline:
-			report(last, meName, projected, visible, maxCameraError)
-			return
-		case <-ticker.C:
-			last = relay.Snapshot()
-			if last.Frame != nil {
-				p, v, err := projectionStats(last.Frame, o)
-				projected, visible = p, v
-				if err > maxCameraError {
-					maxCameraError = err
-				}
-				if me := selectPlayer(last.Frame, o); me != nil {
-					meName = me.Name
-				}
-			}
-			fmt.Printf("connected=%v host=%v frames=%d bytes=%d gaps=%d age=%s\n",
-				last.Status.Connected, last.Status.HostOnline, last.Frames, last.Bytes, last.Gaps, ageOf(last.FrameAt))
-		}
-	}
-}
-
-func ageOf(t time.Time) string {
-	if t.IsZero() {
-		return "n/a"
-	}
-	return time.Since(t).Round(time.Millisecond).String()
-}
-
-func report(s RelaySnapshot, me string, projected, visible int, maxErr float32) {
-	fmt.Printf("\nsummary: frames=%d bytes=%d gaps=%d players=%d you=%q projected=%d on_screen=%d camera_error=%.6f\n",
-		s.Frames, s.Bytes, s.Gaps, playerCount(s.Frame), me, projected, visible, maxErr)
 }
 
 func playerCount(f *Frame) int {

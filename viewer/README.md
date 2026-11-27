@@ -28,16 +28,13 @@ Relay URL defaults to `wss://cs2.kjt.lol/ws`; set `CS2ESPSERVER` or pass
 CS2ESPSERVER=ws://192.168.1.110:8080/ws ./cs2-remote-viewer --room ... --key ...
 ```
 
-## Headless (CI / connectivity checks)
+## Smoke test
 
-Use the `-cli` binary: it is built with `-tags headless`, so Ebiten is not
-linked and no window station is needed (services, SSH sessions).
+`--seconds N` quits on its own and prints counters plus a projection summary:
 
 ```sh
-./cs2-remote-viewer-cli --headless --seconds 10 --room ABC234 --key ...
+./cs2-remote-viewer --seconds 10 --room ABC234 --key ...
 ```
-
-Prints frame/byte counters, sequence gaps, and a projection summary:
 
 ```
 summary: frames=150 bytes=283800 gaps=0 players=10 you="selftest0" projected=9 on_screen=6 camera_error=0.000000
@@ -53,7 +50,6 @@ the C++ implementation.
 ./build.sh
 # or
 go build -o cs2-remote-viewer .
-go build -tags headless -o cs2-remote-viewer-cli .
 ```
 
 Cross-compiles:
@@ -73,7 +69,7 @@ protocol.go      CS2R v2 parser, mirrors src/net/protocol.hpp
 camera.go        view matrix + projection, mirrors src/net/camera.hpp
 relay.go         websocket client, reconnect, latest-frame store
 render.go        Ebiten overlay: boxes, skeleton, health, flags, bomb
-main.go          flags, headless mode, player selection
+main.go          flags, player selection, summary
 *_test.go        golden frame, truncation, mutation fuzz, camera parity
 ```
 

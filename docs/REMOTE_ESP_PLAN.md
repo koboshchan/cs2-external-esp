@@ -320,7 +320,7 @@ docs/REMOTE_ESP_PLAN.md     this file
 | 2 | Camera matrix + calibration harness | matches `host_view_matrix` < 1e-3, head lands on crosshair | 1–2 d | done (live check pending) |
 | 3 | Node relay: rooms, auth, fan-out, limits | 1 host + 4 viewers, 30 Hz, no queue growth | 1–2 d | done (7 tests) |
 | 4 | Host publisher thread + `--mode=host` | 10 min session, no frame drops on engine thread | 1 d | done |
-| 5 | **Go viewer** + `--mode=viewer` equivalent | ESP renders in viewer's own window, no `cs2.exe` handle | 2–3 d | done (headless verified on macOS + Windows) |
+| 5 | **Go viewer** + `--mode=viewer` equivalent | ESP renders in viewer's own window, no `cs2.exe` handle | 2–3 d | done (window verified on macOS, cross-built for Windows) |
 | 6 | Remote tab, identity pick, config, status | restart restores room + identity | 1 d | host tab done; viewer picker done |
 | 7 | Interpolation, reconnect, stale handling | 60 fps smooth at 30 Hz, survives relay restart | 1–2 d | not started |
 | 8 | Hardening, deploy docs, CI | fuzz-ish malformed frames do not crash viewer | 1–2 d | not started |
