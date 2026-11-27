@@ -37,6 +37,13 @@ type canvas interface {
 	Opaque() bool
 }
 
+// Overridden per platform: the Windows overlay is click-through, so it cannot
+// receive Tab and uses a global hotkey instead.
+var (
+	nextPlayerKey = "F8"
+	quitKey       = "END"
+)
+
 var nextPlayerRequested atomic.Bool
 
 func requestNextPlayer() { nextPlayerRequested.Store(true) }
@@ -59,23 +66,45 @@ func (s *scene) update() {
 	}
 
 	snap := s.relay.Snapshot()
-	if snap.Frame == nil || len(snap.Frame.Players) == 0 {
+	if snap.Frame == nil {
 		return
 	}
 
-	current := s.currentPlayer(snap.Frame)
-	next := int8(0)
-	if current != nil {
-		next = current.Index + 1
+	if next := nextPlayerIndex(snap.Frame.Players, s.currentPlayer(snap.Frame)); next >= 0 {
+		s.selected = next
+	}
+}
+
+// nextPlayerIndex returns the player after current, wrapping around the list.
+// Dead players are skipped while at least one player is alive.
+func nextPlayerIndex(players []Player, current *Player) int8 {
+	if len(players) == 0 {
+		return -1
 	}
 
-	for i := 0; i < len(snap.Frame.Players); i++ {
-		if p := snap.Frame.PlayerByIndex(int(next)); p != nil {
-			s.selected = p.Index
-			return
+	order := make([]int, 0, len(players))
+	for i := range players {
+		if players[i].Alive() {
+			order = append(order, i)
 		}
-		next++
 	}
+	if len(order) == 0 {
+		for i := range players {
+			order = append(order, i)
+		}
+	}
+
+	position := -1
+	if current != nil {
+		for k, i := range order {
+			if players[i].Index == current.Index {
+				position = k
+				break
+			}
+		}
+	}
+
+	return players[order[(position+1)%len(order)]].Index
 }
 
 func (s *scene) currentPlayer(f *Frame) *Player {
@@ -130,7 +159,7 @@ func (s *scene) draw(c canvas) {
 		snap.Status.Room, f.Seq, ageOf(snap.FrameAt), len(f.Players), me.Name, me.Index)
 	c.Text(16, 16, hud, color.RGBA{200, 205, 215, 255})
 
-	c.Text(16, h-24, "F8 = next player    END = quit", colorDim)
+	c.Text(16, h-24, nextPlayerKey+" = next player    "+quitKey+" = quit", colorDim)
 
 	if !snap.Status.HostOnline {
 		c.Text(16, 34, "host offline - last frame shown", colorBomb)

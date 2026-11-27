@@ -25,6 +25,11 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
+func init() {
+	nextPlayerKey = "TAB"
+	quitKey = "ESC"
+}
+
 type ebitenCanvas struct {
 	img *ebiten.Image
 }
