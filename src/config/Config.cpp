@@ -144,6 +144,16 @@ bool Config::ReadImpl() {
 		// antiflash
 		cfg::antiflash::enabled = data["antiflash"].value("enabled", false);
 
+		// remote
+		cfg::remote::enabled = data["remote"].value("enabled", false);
+		cfg::remote::url = data["remote"].value("url", std::string("ws://127.0.0.1:8080/ws"));
+		cfg::remote::room = data["remote"].value("room", std::string{});
+		cfg::remote::token = data["remote"].value("token", std::string{});
+		cfg::remote::viewer_key = data["remote"].value("viewer_key", std::string{});
+		cfg::remote::rate = data["remote"].value("rate", 30);
+		cfg::remote::publish_names = data["remote"].value("publish_names", true);
+		cfg::remote::publish_steam_ids = data["remote"].value("publish_steam_ids", true);
+
 		// utils
 		//cfg::settings::console = data["utils"].value("console", true);
 		cfg::settings::watermark = data["utils"].value("watermark", true);
@@ -278,6 +288,16 @@ bool Config::WriteImpl() {
 
 	// antiflash
 	data["antiflash"]["enabled"] = cfg::antiflash::enabled;
+
+	// remote
+	data["remote"]["enabled"] = cfg::remote::enabled;
+	data["remote"]["url"] = cfg::remote::url;
+	data["remote"]["room"] = cfg::remote::room;
+	data["remote"]["token"] = cfg::remote::token;
+	data["remote"]["viewer_key"] = cfg::remote::viewer_key;
+	data["remote"]["rate"] = cfg::remote::rate;
+	data["remote"]["publish_names"] = cfg::remote::publish_names;
+	data["remote"]["publish_steam_ids"] = cfg::remote::publish_steam_ids;
 
 	// utils
 	//data["utils"]["console"] = cfg::settings::console;

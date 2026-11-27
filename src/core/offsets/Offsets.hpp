@@ -67,6 +67,7 @@ namespace offsets
 		inline std::ptrdiff_t m_flFlashDuration = 0x1510; // float32 - C_CSPlayerPawnBase
 		inline std::ptrdiff_t m_pCameraServices = 0x1328; // CPlayer_CameraServices* - C_BasePlayerPawn
 		inline std::ptrdiff_t m_vecCsViewPunchAngle = 0x48; // QAngle - CPlayer_CameraServices
+		inline std::ptrdiff_t m_iFov = 0x298; // int32 - CCSPlayerBase_CameraServices
 	}
 
 	namespace bomb {

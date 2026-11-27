@@ -46,6 +46,8 @@ set SRCS=scripts\msvc\compatibility.cpp ^
          src/core/engine/features/TriggerBot.cpp ^
          src/core/engine/features/AntiFlash.cpp ^
          src/core/engine/features/Bhop.cpp ^
+         src/net/ws_client.cpp ^
+         src/net/publisher.cpp ^
          src/core/engine/classes/Bomb.cpp ^
          src/core/engine/Engine.cpp ^
          src/core/engine/classes/Game.cpp ^

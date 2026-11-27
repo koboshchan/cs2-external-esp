@@ -25,6 +25,7 @@ public:
     Vec2_t eye_angles;  // Current view angles (pitch, yaw)
     Vec3_t view_offset; // View height offset (changes when crouching)
     int shots_fired = 0;
+    float fov = 90.f;   // Per-player horizontal FOV (scoped weapons change it)
 
     int ping = 0;
     int team = 0;

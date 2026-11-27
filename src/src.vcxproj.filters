@@ -57,6 +57,12 @@
     <ClCompile Include="core\engine\features\Bhop.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\ws_client.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\publisher.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="core\engine\Engine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -231,6 +237,18 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="core\engine\features\RecoilPatterns.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\protocol.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\camera.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\ws_client.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\publisher.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="core\engine\Engine.hpp">

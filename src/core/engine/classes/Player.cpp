@@ -123,7 +123,10 @@ bool Player::UpdatePawn() {
 	// View punch now lives in CPlayer_CameraServices (m_aimPunchAngle no longer exists)
 	auto camera_services = p->read<uintptr_t>(pawn + offsets::pawn::m_pCameraServices);
 	if (camera_services)
+	{
 		this->aim_punch = p->read<Vec3_t>(camera_services + offsets::pawn::m_vecCsViewPunchAngle);
+		this->fov = static_cast<float>(p->read<int32_t>(camera_services + offsets::pawn::m_iFov));
+	}
 
 	if (!UpdateSkeleton()) {
 		LOGF(FATAL, "Failed to update skeleton");

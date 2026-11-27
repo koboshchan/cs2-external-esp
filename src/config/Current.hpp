@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 namespace cfg {
 	inline bool enabled = true;
 
@@ -137,6 +139,20 @@ namespace cfg {
 		inline bool streamproof = false;
 		inline bool vsync = false;
 		inline bool free_cpu = true;
+	}
+
+	// Remote ESP (host publishing / viewer subscribing)
+	namespace remote {
+		inline bool enabled = false;
+		inline std::string url = "ws://127.0.0.1:8080/ws";
+		inline std::string room;
+		inline std::string token;      // host token, used when publishing
+		inline std::string viewer_key; // viewer key, used when subscribing
+		inline int rate = 30;          // frames per second published by the host
+
+		// Privacy: what leaves the machine
+		inline bool publish_names = true;
+		inline bool publish_steam_ids = true;
 	}
 
 	// Not stored, just for testing

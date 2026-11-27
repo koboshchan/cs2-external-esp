@@ -272,6 +272,7 @@ bool Dumper::FetchOffsetsFromCS2DumperImpl() {
         applied += apply("C_CSPlayerPawnBase", "m_flFlashDuration", offsets::pawn::m_flFlashDuration);
         applied += apply("C_BasePlayerPawn", "m_pCameraServices", offsets::pawn::m_pCameraServices);
         applied += apply("CPlayer_CameraServices", "m_vecCsViewPunchAngle", offsets::pawn::m_vecCsViewPunchAngle);
+        applied += apply("CCSPlayerBase_CameraServices", "m_iFOV", offsets::pawn::m_iFov);
 
         LOGF(INFO, "Applied {} feature offsets from cs2-dumper:", applied);
         LOGF(INFO, "  dwViewAngles:            0x{:X}", offsets::viewAngles);
@@ -284,6 +285,7 @@ bool Dumper::FetchOffsetsFromCS2DumperImpl() {
         LOGF(INFO, "  m_flFlashDuration:       0x{:X}", offsets::pawn::m_flFlashDuration);
         LOGF(INFO, "  m_pCameraServices:       0x{:X}", offsets::pawn::m_pCameraServices);
         LOGF(INFO, "  m_vecCsViewPunchAngle:   0x{:X}", offsets::pawn::m_vecCsViewPunchAngle);
+        LOGF(INFO, "  m_iFov:                  0x{:X}", offsets::pawn::m_iFov);
 
         if (offsets::viewAngles == 0) {
             LOGF(WARNING, "cs2-dumper did not provide dwViewAngles, aimbot/RCS will be disabled");
