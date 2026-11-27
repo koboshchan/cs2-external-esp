@@ -223,8 +223,9 @@ void ov_launcher_create(const char *server, const char *room, const char *key) {
     connect.action = @selector(connectClicked:);
     [content addSubview:connect];
 
-    gStatusLabel = makeLabel(NSMakeRect(244, 392, 310, 40), @"Paste the room code and viewer key from the host.");
+    gStatusLabel = makeLabel(NSMakeRect(244, 380, 316, 56), @"Paste the room code and viewer key from the host.");
     gStatusLabel.lineBreakMode = NSLineBreakByWordWrapping;
+    gStatusLabel.maximumNumberOfLines = 3;
     [content addSubview:gStatusLabel];
 
     [content addSubview:makeLabel(NSMakeRect(16, 360, 120, 20), @"You are")];

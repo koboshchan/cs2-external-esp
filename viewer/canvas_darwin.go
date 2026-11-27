@@ -137,7 +137,14 @@ func (c *overlayCanvas) Opaque() bool { return false }
 func launcherGet(field int) string {
 	buffer := make([]byte, 512)
 	C.ov_launcher_get(C.int(field), (*C.char)(unsafe.Pointer(&buffer[0])), C.int(len(buffer)))
-	return strings.TrimSpace(string(buffer))
+
+	// The C side NUL-terminates; the rest of the buffer is padding.
+	end := 0
+	for end < len(buffer) && buffer[end] != 0 {
+		end++
+	}
+
+	return strings.TrimSpace(string(buffer[:end]))
 }
 
 func launcherStatus(text string) {
@@ -175,6 +182,10 @@ func largestWindow() int {
 func runUI(ctx context.Context, o options) (*Relay, error) {
 	C.ov_init()
 	C.ov_launcher_create(cstr(o.server), cstr(o.room), cstr(o.key))
+
+	if o.uiTest {
+		fmt.Printf("fields: server=%q room=%q key=%q\n", launcherGet(0), launcherGet(1), launcherGet(2))
+	}
 
 	var (
 		relay     *Relay
