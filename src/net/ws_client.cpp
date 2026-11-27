@@ -120,7 +120,12 @@ namespace net
 		}
 
 		BOOL upgrade = TRUE;
-		WinHttpSetOption(request_, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, &upgrade, sizeof(upgrade));
+		if (!WinHttpSetOption(request_, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, &upgrade, sizeof(upgrade)))
+		{
+			if (error) *error = "WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET failed (" + std::to_string(GetLastError()) + ")";
+			Close();
+			return false;
+		}
 
 		if (!WinHttpSendRequest(request_, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0))
 		{

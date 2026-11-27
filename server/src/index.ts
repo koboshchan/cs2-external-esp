@@ -281,6 +281,13 @@ function createServer(): http.Server {
 
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ error: 'not_found' }));
+    log('http_not_found', {
+      method: req.method,
+      path: url.pathname,
+      upgrade: req.headers.upgrade ?? null,
+      connection: req.headers.connection ?? null,
+      websocket_key: req.headers['sec-websocket-key'] ? 'yes' : 'no',
+    });
   };
 
   if (TLS_CERT && TLS_KEY) {
