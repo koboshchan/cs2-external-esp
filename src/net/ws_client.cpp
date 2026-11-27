@@ -1,5 +1,11 @@
 #include "net/ws_client.hpp"
 
+// Must match the rest of the project: the vendored libcurl is a static library,
+// otherwise the compiler expects dllimport stubs (__imp_curl_ws_send).
+#ifndef CURL_STATICLIB
+#define CURL_STATICLIB
+#endif
+
 #include <curl/curl.h>
 
 #include <chrono>
