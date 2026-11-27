@@ -20,6 +20,19 @@ namespace net
 			return out;
 		}
 
+		std::string WinHttpErrorHint(DWORD code)
+		{
+			switch (code)
+			{
+			case 12175: return "TLS handshake or certificate validation failed; the server must accept TLS 1.2 (Windows Schannel has TLS 1.3 off by default)";
+			case 12029: return "could not connect";
+			case 12002: return "timed out";
+			case 12007: return "DNS lookup failed";
+			case 12037: return "certificate is for a different host";
+			default: return "WinHTTP error";
+			}
+		}
+
 		// WinHttpCrackUrl only understands http/https; ws/wss are the same
 		// scheme with an upgrade.
 		std::string ToHttpScheme(const std::string& url, bool* secure)
@@ -136,14 +149,22 @@ namespace net
 
 		if (!WinHttpSendRequest(request_, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0))
 		{
-			if (error) *error = "WinHttpSendRequest failed (" + std::to_string(GetLastError()) + ")";
+			if (error)
+			{
+				const DWORD code = GetLastError();
+				*error = "WinHttpSendRequest: " + WinHttpErrorHint(code) + " (" + std::to_string(code) + ")";
+			}
 			Close();
 			return false;
 		}
 
 		if (!WinHttpReceiveResponse(request_, nullptr))
 		{
-			if (error) *error = "WinHttpReceiveResponse failed (" + std::to_string(GetLastError()) + ")";
+			if (error)
+			{
+				const DWORD code = GetLastError();
+				*error = "WinHttpReceiveResponse: " + WinHttpErrorHint(code) + " (" + std::to_string(code) + ")";
+			}
 			Close();
 			return false;
 		}
