@@ -30,8 +30,11 @@ CS2ESPSERVER=ws://192.168.1.110:8080/ws ./cs2-remote-viewer --room ... --key ...
 
 ## Headless (CI / connectivity checks)
 
+Use the `-cli` binary: it is built with `-tags headless`, so Ebiten is not
+linked and no window station is needed (services, SSH sessions).
+
 ```sh
-./cs2-remote-viewer --headless --seconds 10 --room ABC234 --key ...
+./cs2-remote-viewer-cli --headless --seconds 10 --room ABC234 --key ...
 ```
 
 Prints frame/byte counters, sequence gaps, and a projection summary:
@@ -50,6 +53,7 @@ the C++ implementation.
 ./build.sh
 # or
 go build -o cs2-remote-viewer .
+go build -tags headless -o cs2-remote-viewer-cli .
 ```
 
 Cross-compiles:

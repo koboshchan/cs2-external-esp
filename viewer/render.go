@@ -1,3 +1,5 @@
+//go:build !headless
+
 package main
 
 // Ebiten window: draws boxes, skeletons, health and flags for the selected
