@@ -71,10 +71,52 @@ npm test          # builds, then runs the relay smoke tests
 node test/live-viewer.mjs ws://127.0.0.1:8080/ws ROOM VIEWER_KEY 5
 ```
 
-## Deploy
+## Docker
 
-systemd unit, behind Caddy/nginx for TLS, or Docker. Put the TLS certificate
-paths in `TLS_CERT` / `TLS_KEY` to serve `wss://` directly from Node.
+Multi-stage image: TypeScript is compiled in a builder stage, the runtime
+image keeps only production dependencies and runs as an unprivileged user.
+
+```sh
+docker compose up -d --build
+docker compose logs -f
+curl http://127.0.0.1:8080/health
+docker compose down
+```
+
+The compose service is `restart: unless-stopped`, `init: true`, read-only with
+a tmpfs for `/tmp`, drops privileges (`no-new-privileges`), has a healthcheck
+on `/health`, and caps log size.
+
+Copy `.env.example` to `.env` to change the published port or limits:
+
+```sh
+cp .env.example .env
+# PORT=9000, MAX_VIEWERS=16, ...
+docker compose up -d
+```
+
+TLS (`wss://`) inside the container — mount certificates and set the env vars:
+
+```yaml
+    environment:
+      TLS_CERT: /certs/fullchain.pem
+      TLS_KEY: /certs/privkey.pem
+    volumes:
+      - ./certs:/certs:ro
+```
+
+Without compose:
+
+```sh
+docker build -t cs2-remote-esp-relay .
+docker run -d --name relay -p 8080:8080 --read-only --tmpfs /tmp \
+  -e MAX_VIEWERS=8 cs2-remote-esp-relay
+```
+
+## Deploy without Docker
+
+systemd unit behind Caddy/nginx for TLS, with `TLS_CERT` / `TLS_KEY` to serve
+`wss://` directly from Node.
 
 Limits are per connection: 60 messages/second (240 burst), frames above
 `MAX_FRAME_BYTES` rejected, viewers more than 256 KiB behind get frames

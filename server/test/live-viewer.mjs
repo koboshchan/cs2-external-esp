@@ -6,6 +6,8 @@
 
 import { WebSocket } from 'ws';
 
+import { PROTO_VERSION } from '../dist/protocol.js';
+
 const [url, room, key, seconds = '5'] = process.argv.slice(2);
 
 if (!url || !room || !key) {
@@ -21,7 +23,7 @@ let gaps = 0;
 let control = 0;
 
 ws.on('open', () => {
-  ws.send(JSON.stringify({ t: 'hello', role: 'viewer', room, token: key, proto: 1 }));
+  ws.send(JSON.stringify({ t: 'hello', role: 'viewer', room, token: key, proto: PROTO_VERSION }));
 });
 
 ws.on('message', (data, isBinary) => {
