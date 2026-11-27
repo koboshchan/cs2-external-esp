@@ -45,6 +45,9 @@ namespace net
 
 		void SetOnMessage(MessageCallback cb) { on_message_ = std::move(cb); }
 
+		// libcurl version plus the protocols it was built with, for diagnostics.
+		static std::string RuntimeInfo();
+
 	private:
 		enum class WaitResult { Ready, Timeout, Error };
 

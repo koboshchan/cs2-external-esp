@@ -45,6 +45,25 @@ namespace net
 		Close();
 	}
 
+	std::string WsClient::RuntimeInfo()
+	{
+		GlobalInit();
+
+		std::string out = "libcurl ";
+		const curl_version_info_data* info = curl_version_info(CURLVERSION_NOW);
+		if (!info)
+			return out + "(unknown)";
+
+		out += info->version ? info->version : "?";
+		out += " protocols:";
+		for (const char* const* p = info->protocols; p && *p; ++p)
+		{
+			out += ' ';
+			out += *p;
+		}
+		return out;
+	}
+
 	bool WsClient::Connect(const std::string& url, std::string* error)
 	{
 		Close();
@@ -69,7 +88,14 @@ namespace net
 		const CURLcode rc = curl_easy_perform(easy_);
 		if (rc != CURLE_OK)
 		{
-			if (error) *error = curl_easy_strerror(rc);
+			long response = 0;
+			curl_easy_getinfo(easy_, CURLINFO_RESPONSE_CODE, &response);
+			if (error)
+			{
+				*error = std::string(curl_easy_strerror(rc)) +
+					" (curl code " + std::to_string(int(rc)) +
+					", http " + std::to_string(response) + ")";
+			}
 			Close();
 			return false;
 		}

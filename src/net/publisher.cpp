@@ -460,12 +460,17 @@ namespace net
 	int Publisher::RunSelfTest(const std::string& url, const std::string& room, const std::string& token, int seconds)
 	{
 		LOGF(INFO, "[net] self-test: {} room {} for {}s", url, room, seconds);
+		std::fprintf(stderr, "[net] self-test: url=%s room=%s seconds=%d\n", url.c_str(), room.c_str(), seconds);
+		std::fprintf(stderr, "[net] libcurl runtime: %s\n", WsClient::RuntimeInfo().c_str());
 
-		if (!g_client.Connect(url, nullptr))
+		std::string connect_error;
+		if (!g_client.Connect(url, &connect_error))
 		{
-			LOGF(FATAL, "[net] self-test could not connect");
+			std::fprintf(stderr, "[net] self-test connect failed: %s\n", connect_error.c_str());
+			LOGF(FATAL, "[net] self-test could not connect: {}", connect_error);
 			return 2;
 		}
+		std::fprintf(stderr, "[net] self-test connected\n");
 
 		g_client.SetOnMessage([](bool binary, const uint8_t* data, size_t size)
 		{
