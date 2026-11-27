@@ -28,6 +28,8 @@ void ov_launcher_set_players(const char* newline_separated);
 int  ov_launcher_player_index(void);
 void ov_launcher_set_windows(const char* newline_separated);
 int  ov_launcher_window_index(void);
+void ov_launcher_pick(int index);
+void ov_launcher_force_start(void);
 
 const char* ov_windows_list(void);
 int  ov_window_count(void);
@@ -247,7 +249,7 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 
 				var sig strings.Builder
 				for _, p := range players {
-					fmt.Fprintf(&sig, "%d:%s:%d;", p.Index, p.Name, p.Health)
+					fmt.Fprintf(&sig, "%d:%s;", p.Index, p.Name)
 				}
 
 				if sig.String() != playerSig {
@@ -279,12 +281,19 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 			}
 
 			canvas.windowIndex = largestWindow()
+			selectedPlayerIndex = index
 			sc = newScene(relay, o)
 			sc.selected = index
 
 			started = true
 			C.ov_launcher_hide()
 			C.ov_overlay_show()
+		}
+
+		if o.pick >= 0 && relay != nil && !started && len(players) > 0 {
+			C.ov_launcher_pick(C.int(o.pick))
+			C.ov_launcher_force_start()
+			o.pick = -1
 		}
 
 		if C.ov_launcher_take_start() == 1 {
@@ -308,6 +317,7 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 				}
 
 				canvas.windowIndex = windowIndex
+				selectedPlayerIndex = index
 				sc = newScene(relay, o)
 				sc.selected = index
 

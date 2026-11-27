@@ -363,7 +363,7 @@ func (c *connectWindow) RefreshPlayers(relay *Relay) {
 
 	var sig strings.Builder
 	for _, p := range players {
-		fmt.Fprintf(&sig, "%d:%s:%d;", p.Index, p.Name, p.Health)
+		fmt.Fprintf(&sig, "%d:%s;", p.Index, p.Name)
 	}
 	if sig.String() == c.playerSig {
 		return
@@ -475,6 +475,10 @@ func (c *connectWindow) Pump() {
 		pTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
 		pDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
 	}
+}
+
+func (c *connectWindow) PickPlayer(position int) {
+	pSendMessageW.Call(c.playerList, lbSetCurSel, uintptr(position), 0)
 }
 
 func (c *connectWindow) TakeConnect() bool { return c.connectRequested.Swap(false) }

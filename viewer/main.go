@@ -69,6 +69,7 @@ type options struct {
 	rect     string
 	autostart bool
 	dump      string
+	pick      int
 }
 
 func parseFlags() options {
@@ -83,6 +84,7 @@ func parseFlags() options {
 	flag.StringVar(&o.rect, "rect", "", "overlay rect as x,y,w,h (default: the CS2 window)")
 	flag.BoolVar(&o.autostart, "autostart", false, "skip the launcher and bind to the CS2 window as soon as frames arrive")
 	flag.StringVar(&o.dump, "dump", "", "write the overlay bitmap to a PNG on exit (macOS, testing)")
+	flag.IntVar(&o.pick, "pick", -1, "select the Nth player in the launcher automatically (testing)")
 	flag.Parse()
 
 	return o
@@ -135,7 +137,15 @@ func startRelay(ctx context.Context, o options) (*Relay, context.CancelFunc) {
 	return relay, cancel
 }
 
+// selectedPlayerIndex is set by the launcher when the overlay starts, so the
+// summary reports the player the user actually picked.
+var selectedPlayerIndex int8 = -1
+
 func printSummary(relay *Relay, o options) {
+	if selectedPlayerIndex >= 0 {
+		o.meIndex = int(selectedPlayerIndex)
+	}
+
 	snap := relay.Snapshot()
 
 	me := ""

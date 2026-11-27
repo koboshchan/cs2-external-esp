@@ -738,6 +738,12 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 			}
 		}
 
+		if o.pick >= 0 && relay != nil && !started && len(cw.playerIndices) > 0 {
+			cw.PickPlayer(o.pick)
+			o.pick = -1
+			cw.startRequested.Store(true)
+		}
+
 		if cw.TakeStart() {
 			index, hwnd := cw.Selection()
 			if hwnd == 0 {
@@ -757,6 +763,7 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 				}
 
 				canvas.Bind(hwnd)
+				selectedPlayerIndex = index
 				sc = newScene(relay, o)
 				sc.selected = index
 

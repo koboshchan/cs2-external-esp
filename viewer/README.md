@@ -59,6 +59,7 @@ Command-line flags are optional, for scripting:
 ./cs2-remote-viewer --room ... --key ... --me 76561198000000000
 ./cs2-remote-viewer --room ... --key ... --me "player name"
 ./cs2-remote-viewer --room ... --key ... --me-index 4
+./cs2-remote-viewer --pick 3            # testing: auto-select the 4th player
 ```
 
 Saved settings live in:

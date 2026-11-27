@@ -281,6 +281,15 @@ void ov_launcher_set_windows(const char *newline_separated) {
   }
 }
 
+void ov_launcher_pick(int index) {
+  if (!gPlayerPopup) return;
+  if (index >= 0 && index < (int)gPlayerPopup.numberOfItems) {
+    [gPlayerPopup selectItemAtIndex:index];
+  }
+}
+
+void ov_launcher_force_start(void) { gStartFlag = YES; }
+
 int ov_launcher_window_index(void) {
   if (!gWindowPopup) return -1;
   return (int)gWindowPopup.indexOfSelectedItem;
