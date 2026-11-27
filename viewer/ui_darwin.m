@@ -30,6 +30,7 @@ static BOOL gConnectFlag = NO;
 static BOOL gStartFlag = NO;
 static BOOL gRefreshFlag = NO;
 static BOOL gQuitFlag = NO;
+static BOOL gShowLauncherFlag = NO;
 
 static NSWindow *gOverlay = nil;
 static NSView *gOverlayView = nil;
@@ -49,6 +50,23 @@ static char gWindowTitles[16384];
 
 static NSString *const kOvFontName = @"Menlo";
 
+// Controls that react to the very first click, even when the app is not the
+// active application yet. Without this, macOS swallows the first click to
+// activate the window and the popup/button appears dead.
+@interface OvButton : NSButton
+@end
+
+@implementation OvButton
+- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+@end
+
+@interface OvPopUpButton : NSPopUpButton
+@end
+
+@implementation OvPopUpButton
+- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+@end
+
 @interface OvController : NSObject
 - (void)connectClicked:(id)sender;
 - (void)startClicked:(id)sender;
@@ -65,8 +83,27 @@ static NSString *const kOvFontName = @"Menlo";
 
 - (void)showLauncher:(id)sender {
   if (!gLauncher) return;
+
+  // The overlay is above menu-window level; leaving it up would hide the
+  // launcher and any popup menus.
+  if (gOverlay) [gOverlay orderOut:nil];
+  gOverlayVisible = NO;
+  gShowLauncherFlag = YES;
+
   [gLauncher makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
+}
+
+- (void)prevPlayer:(id)sender {
+  NSInteger index = gPlayerPopup.indexOfSelectedItem;
+  if (index > 0) [gPlayerPopup selectItemAtIndex:index - 1];
+}
+
+- (void)nextPlayer:(id)sender {
+  NSInteger index = gPlayerPopup.indexOfSelectedItem;
+  if (index >= 0 && index + 1 < (NSInteger)gPlayerPopup.numberOfItems) {
+    [gPlayerPopup selectItemAtIndex:index + 1];
+  }
 }
 
 - (void)quitClicked:(id)sender { gQuitFlag = YES; }
@@ -96,6 +133,20 @@ void ov_init(void) {
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+    [NSApp finishLaunching];
+
+    if (!NSApp.mainMenu) {
+      NSMenu *menubar = [[NSMenu alloc] init];
+      NSMenuItem *appItem = [[NSMenuItem alloc] init];
+      [menubar addItem:appItem];
+
+      NSMenu *appMenu = [[NSMenu alloc] init];
+      [appMenu addItemWithTitle:@"Quit cs2 remote viewer"
+                         action:@selector(terminate:)
+                  keyEquivalent:@"q"];
+      appItem.submenu = appMenu;
+      NSApp.mainMenu = menubar;
+    }
 
     if (!gController) {
       gController = [[OvController alloc] init];
@@ -164,7 +215,7 @@ void ov_launcher_create(const char *server, const char *room, const char *key) {
     gKeyField = makeField(NSMakeRect(110, 436, 440, 24), [NSString stringWithUTF8String:key ?: ""]);
     [content addSubview:gKeyField];
 
-    NSButton *connect = [[NSButton alloc] initWithFrame:NSMakeRect(110, 396, 120, 30)];
+    NSButton *connect = [[OvButton alloc] initWithFrame:NSMakeRect(110, 396, 120, 30)];
     connect.title = @"Connect";
     connect.bezelStyle = NSBezelStyleRounded;
     connect.target = gController;
@@ -176,21 +227,35 @@ void ov_launcher_create(const char *server, const char *room, const char *key) {
     [content addSubview:gStatusLabel];
 
     [content addSubview:makeLabel(NSMakeRect(16, 360, 120, 20), @"You are")];
-    gPlayerPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(16, 328, 540, 28) pullsDown:NO];
+    gPlayerPopup = [[OvPopUpButton alloc] initWithFrame:NSMakeRect(16, 328, 440, 28) pullsDown:NO];
     [content addSubview:gPlayerPopup];
 
+    NSButton *prevPlayer = [[OvButton alloc] initWithFrame:NSMakeRect(464, 328, 44, 28)];
+    prevPlayer.title = @"<";
+    prevPlayer.bezelStyle = NSBezelStyleRounded;
+    prevPlayer.target = gController;
+    prevPlayer.action = @selector(prevPlayer:);
+    [content addSubview:prevPlayer];
+
+    NSButton *nextPlayer = [[OvButton alloc] initWithFrame:NSMakeRect(512, 328, 44, 28)];
+    nextPlayer.title = @">";
+    nextPlayer.bezelStyle = NSBezelStyleRounded;
+    nextPlayer.target = gController;
+    nextPlayer.action = @selector(nextPlayer:);
+    [content addSubview:nextPlayer];
+
     [content addSubview:makeLabel(NSMakeRect(16, 296, 120, 20), @"Overlay window")];
-    gWindowPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(16, 264, 450, 28) pullsDown:NO];
+    gWindowPopup = [[OvPopUpButton alloc] initWithFrame:NSMakeRect(16, 264, 450, 28) pullsDown:NO];
     [content addSubview:gWindowPopup];
 
-    NSButton *refresh = [[NSButton alloc] initWithFrame:NSMakeRect(474, 264, 82, 28)];
+    NSButton *refresh = [[OvButton alloc] initWithFrame:NSMakeRect(474, 264, 82, 28)];
     refresh.title = @"Refresh";
     refresh.bezelStyle = NSBezelStyleRounded;
     refresh.target = gController;
     refresh.action = @selector(refreshClicked:);
     [content addSubview:refresh];
 
-    NSButton *start = [[NSButton alloc] initWithFrame:NSMakeRect(16, 210, 160, 34)];
+    NSButton *start = [[OvButton alloc] initWithFrame:NSMakeRect(16, 210, 160, 34)];
     start.title = @"Start overlay";
     start.bezelStyle = NSBezelStyleRounded;
     start.keyEquivalent = @"\r";
@@ -200,6 +265,7 @@ void ov_launcher_create(const char *server, const char *room, const char *key) {
 
     [gLauncher makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
+    [NSApp activate];
     [gLauncher makeFirstResponder:gRoomField];
   }
 }
@@ -221,6 +287,7 @@ int ov_launcher_take_connect(void) { BOOL v = gConnectFlag; gConnectFlag = NO; r
 int ov_launcher_take_start(void) { BOOL v = gStartFlag; gStartFlag = NO; return v ? 1 : 0; }
 int ov_launcher_take_refresh(void) { BOOL v = gRefreshFlag; gRefreshFlag = NO; return v ? 1 : 0; }
 int ov_take_quit(void) { BOOL v = gQuitFlag; gQuitFlag = NO; return v ? 1 : 0; }
+int ov_take_show_launcher(void) { BOOL v = gShowLauncherFlag; gShowLauncherFlag = NO; return v ? 1 : 0; }
 
 void ov_launcher_get(int field, char *buffer, int length) {
   if (!buffer || length <= 0) return;
@@ -279,6 +346,42 @@ void ov_launcher_set_windows(const char *newline_separated) {
   } else if (items.count > 0) {
     [gWindowPopup selectItemAtIndex:0];
   }
+}
+
+// ov_ui_test opens the player popup, records whether a menu window appeared,
+// then dismisses it with Escape. Used to verify the dropdown works.
+void ov_ui_test(void) {
+  if (!gPlayerPopup) return;
+
+  __block BOOL sawMenu = NO;
+  __block NSInteger itemCount = 0;
+
+  NSTimer *probe = [NSTimer timerWithTimeInterval:0.6 repeats:NO block:^(NSTimer *t) {
+    for (NSWindow *w in [NSApp windows]) {
+      NSString *cls = NSStringFromClass([w class]);
+      if ([cls containsString:@"Menu"]) {
+        sawMenu = YES;
+      }
+    }
+    itemCount = (NSInteger)gPlayerPopup.numberOfItems;
+
+    NSEvent *escape = [NSEvent keyEventWithType:NSEventTypeKeyDown
+                                      location:NSZeroPoint
+                                 modifierFlags:0
+                                     timestamp:0
+                                  windowNumber:0
+                                       context:nil
+                                    characters:@"\e"
+                   charactersIgnoringModifiers:@"\e"
+                                     isARepeat:NO
+                                       keyCode:53];
+    [NSApp postEvent:escape atStart:YES];
+  }];
+  [[NSRunLoop mainRunLoop] addTimer:probe forMode:NSRunLoopCommonModes];
+
+  [gPlayerPopup performClick:nil];
+
+  fprintf(stderr, "[ui] popup items=%ld menu_window=%d\n", (long)itemCount, sawMenu ? 1 : 0);
 }
 
 void ov_launcher_pick(int index) {

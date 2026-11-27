@@ -22,6 +22,7 @@ int  ov_launcher_take_connect(void);
 int  ov_launcher_take_start(void);
 int  ov_launcher_take_refresh(void);
 int  ov_take_quit(void);
+int  ov_take_show_launcher(void);
 void ov_launcher_get(int field, char* buffer, int length);
 void ov_launcher_set_status(const char* text);
 void ov_launcher_set_players(const char* newline_separated);
@@ -29,6 +30,7 @@ int  ov_launcher_player_index(void);
 void ov_launcher_set_windows(const char* newline_separated);
 int  ov_launcher_window_index(void);
 void ov_launcher_pick(int index);
+void ov_ui_test(void);
 void ov_launcher_force_start(void);
 
 const char* ov_windows_list(void);
@@ -220,6 +222,11 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 		if C.ov_take_quit() == 1 {
 			break
 		}
+
+		if C.ov_take_show_launcher() == 1 {
+			started = false
+			C.ov_overlay_hide()
+		}
 		if o.seconds > 0 && time.Since(start) > time.Duration(o.seconds)*time.Second {
 			break
 		}
@@ -288,6 +295,11 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 			started = true
 			C.ov_launcher_hide()
 			C.ov_overlay_show()
+		}
+
+		if o.uiTest && !started && len(players) > 0 {
+			o.uiTest = false
+			C.ov_ui_test()
 		}
 
 		if o.pick >= 0 && relay != nil && !started && len(players) > 0 {
