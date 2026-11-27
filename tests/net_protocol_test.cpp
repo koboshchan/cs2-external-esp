@@ -65,6 +65,8 @@ namespace
 			p.pos = { float(i) * 10.f, float(i) * -20.f, 0.5f };
 			p.vel = { 1.f, 2.f, 3.f };
 			p.eye_angles = { -1.f, 90.f };
+			p.eye_pos = { p.pos.x, p.pos.y, p.pos.z + 64.f };
+			p.fov = 90.f;
 
 			// bones 1, 6, 7, 23
 			const int ids[] = { 1, 6, 7, 23 };
@@ -114,6 +116,8 @@ namespace
 			if (!nearly(pa.pos.x, pb.pos.x) || !nearly(pa.pos.y, pb.pos.y) || !nearly(pa.pos.z, pb.pos.z)) return false;
 			if (!nearly(pa.vel.x, pb.vel.x) || !nearly(pa.vel.y, pb.vel.y) || !nearly(pa.vel.z, pb.vel.z)) return false;
 			if (!nearly(pa.eye_angles.x, pb.eye_angles.x) || !nearly(pa.eye_angles.y, pb.eye_angles.y)) return false;
+			if (!nearly(pa.eye_pos.x, pb.eye_pos.x) || !nearly(pa.eye_pos.y, pb.eye_pos.y) || !nearly(pa.eye_pos.z, pb.eye_pos.z)) return false;
+			if (!nearly(pa.fov, pb.fov)) return false;
 			if (pa.bone_mask != pb.bone_mask || pa.bones.size() != pb.bones.size()) return false;
 			for (size_t b = 0; b < pa.bones.size(); b++)
 				if (!nearly(pa.bones[b].x, pb.bones[b].x) || !nearly(pa.bones[b].y, pb.bones[b].y) || !nearly(pa.bones[b].z, pb.bones[b].z))
@@ -192,7 +196,7 @@ int main(int argc, char** argv)
 		check(!net::Deserialize(bad.data(), bad.size(), tmp, nullptr), "bad magic rejected");
 
 		bad = bytes;
-		bad[4] = 0x02; // version 2
+		bad[4] = 0x09; // unsupported version
 		check(!net::Deserialize(bad.data(), bad.size(), tmp, nullptr), "bad version rejected");
 	}
 

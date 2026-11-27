@@ -6,7 +6,7 @@
  * frames of the wrong shape or version.
  */
 
-export const PROTO_VERSION = 1;
+export const PROTO_VERSION = 2;
 
 /** 'CS2R' little-endian */
 export const MAGIC = 0x52325343;

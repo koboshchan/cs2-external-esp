@@ -18,7 +18,7 @@
 namespace net
 {
 	constexpr uint32_t kMagic = 0x52325343; // 'CS2R' little-endian
-	constexpr uint16_t kProtoVersion = 1;
+	constexpr uint16_t kProtoVersion = 2;
 
 	constexpr size_t kMaxFrameBytes = 64 * 1024;
 	constexpr size_t kMinFrameBytes = 12;
@@ -106,7 +106,9 @@ namespace net
 
 		Vec3 pos{};
 		Vec3 vel{};
+		Vec3 eye_pos{}; // pos + view offset, world space (per-player camera origin)
 		Vec2 eye_angles{};
+		float fov = 90.f; // horizontal FOV for this player
 
 		uint32_t bone_mask = 0;
 		std::vector<Vec3> bones; // size must equal popcount(bone_mask)
@@ -273,7 +275,8 @@ namespace net
 		for (const auto& p : f.players)
 		{
 			if (p.name.size() > size_t(kMaxNameLen)) return fail("player name too long");
-			if (!IsFinite(p.pos) || !IsFinite(p.vel) || !IsFinite(p.eye_angles)) return fail("player not finite");
+			if (!IsFinite(p.pos) || !IsFinite(p.vel) || !IsFinite(p.eye_pos) || !IsFinite(p.eye_angles)) return fail("player not finite");
+			if (!IsFinite(p.fov) || p.fov <= 0.f || p.fov > 180.f) return fail("player fov out of range");
 			if (Popcount(p.bone_mask) > kMaxBones) return fail("too many bones");
 			if (p.bones.size() != size_t(Popcount(p.bone_mask))) return fail("bone count does not match mask");
 			for (const auto& b : p.bones)
@@ -325,6 +328,8 @@ namespace net
 			w.vec3(p.pos);
 			w.vec3(p.vel);
 			w.vec2(p.eye_angles);
+			w.vec3(p.eye_pos);
+			w.f32(p.fov);
 			w.u32(p.bone_mask);
 			for (const auto& b : p.bones) w.vec3(b);
 		}
@@ -398,6 +403,8 @@ namespace net
 			p.pos = r.vec3();
 			p.vel = r.vec3();
 			p.eye_angles = r.vec2();
+			p.eye_pos = r.vec3();
+			p.fov = r.f32();
 			p.bone_mask = r.u32();
 
 			if (!r.ok()) return fail("truncated player");

@@ -421,3 +421,6 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Viewer build output
+viewer/dist/

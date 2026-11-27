@@ -186,6 +186,8 @@ namespace net
 				np.pos = { p.pos.x, p.pos.y, p.pos.z };
 				np.vel = { p.vel.x, p.vel.y, p.vel.z };
 				np.eye_angles = { p.eye_angles.x, p.eye_angles.y };
+				np.eye_pos = EyePosition(p);
+				np.fov = p.fov > 1.f && p.fov < 180.f ? p.fov : 90.f;
 
 				// Bones 0..23 are the ones the skeleton/box renderer uses.
 				for (int b = 0; b < 24 && b < static_cast<int>(p.bone_list.size()); b++)
