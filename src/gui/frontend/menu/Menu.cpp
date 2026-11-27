@@ -326,51 +326,58 @@ void Menu::RenderImpl() {
 				}
 				else if (active_tab == Tab::HOST)
 				{
+					const net::HostStatus status = net::HostSession::GetStatus();
+
 					ImGui::Text("Remote hosting");
 					ImGui::Separator();
 					ImGui::TextDisabled("Let others watch this ESP with the viewer client.");
 
-					static char server_buf[256] = {};
-					static bool server_init = false;
-					if (!server_init)
+					if (!status.active)
 					{
-						strncpy_s(server_buf, net::HostSession::ServerUrl().c_str(), _TRUNCATE);
-						server_init = true;
-					}
-
-					ImGui::Spacing();
-					ImGui::SetNextItemWidth(300.f);
-					if (ImGui::InputText("Server##remote", server_buf, sizeof(server_buf), ImGuiInputTextFlags_EnterReturnsTrue))
-					{
-						cfg::remote::url = server_buf;
-						server_init = false;
-					}
-					ImGui::SetItemTooltip(
-						"Default: wss://cs2.kjt.lol/ws\n"
-						"Override with the CS2ESPSERVER environment variable."
-					);
-
-					if (ImGui::Button("Create room"))
-					{
-						net::HostStatus created;
-						std::string err;
-						if (net::HostSession::CreateRoom(net::HostSession::ServerUrl(), created, &err))
+						static char server_buf[256] = {};
+						static bool server_init = false;
+						if (!server_init)
 						{
-							cfg::remote::url = created.server;
-							cfg::remote::room = created.room;
-							cfg::remote::token = created.host_token;
-							cfg::remote::viewer_key = created.viewer_key;
-							LOGF(INFO, "[net] room {} ready, viewer key {}", created.room, created.viewer_key);
+							strncpy_s(server_buf, net::HostSession::ServerUrl().c_str(), _TRUNCATE);
+							server_init = true;
 						}
-						else
+
+						ImGui::Spacing();
+						ImGui::Text("Server");
+						ImGui::SetNextItemWidth(320.f);
+						if (ImGui::InputText("##server", server_buf, sizeof(server_buf), ImGuiInputTextFlags_EnterReturnsTrue))
+							cfg::remote::url = server_buf;
+						ImGui::SetItemTooltip(
+							"Default: wss://cs2.kjt.lol/ws\n"
+							"Override with the CS2ESPSERVER environment variable."
+						);
+
+						ImGui::Spacing();
+						ImGui::SliderInt("Rate", &cfg::remote::rate, 10, 60, "%d fps");
+						ImGui::SetItemTooltip("Applies the next time hosting starts.");
+
+						ImGui::Checkbox("Publish player names", &cfg::remote::publish_names);
+						ImGui::Checkbox("Publish Steam IDs", &cfg::remote::publish_steam_ids);
+
+						ImGui::Spacing();
+						ImGui::Spacing();
+
+						if (ImGui::Button("Host", ImVec2(140, 32)))
 						{
-							LOGF(WARNING, "[net] {}", err);
+							std::string err;
+							if (!net::HostSession::Start(&err))
+								LOGF(WARNING, "[net] could not start hosting: {}", err);
+						}
+						ImGui::SameLine();
+						ImGui::TextDisabled("creates a room and starts publishing");
+
+						if (!status.error.empty())
+						{
+							ImGui::Spacing();
+							ImGui::TextWrapped("%s", status.error.c_str());
 						}
 					}
-
-					const net::HostStatus status = net::HostSession::GetStatus();
-
-					if (!status.room.empty())
+					else
 					{
 						ImGui::Spacing();
 						ImGui::Text("Room code");
@@ -387,58 +394,44 @@ void Menu::RenderImpl() {
 						if (ImGui::SmallButton("Copy##viewerkey"))
 							ImGui::SetClipboardText(status.viewer_key.c_str());
 
-						ImGui::TextDisabled("Share both with the viewer; the code alone is not enough.");
-					}
+						const std::string command = "cs2-remote-viewer --room " + status.room + " --key " + status.viewer_key;
+						ImGui::Spacing();
+						ImGui::TextDisabled("Viewer:");
+						ImGui::SameLine();
+						ImGui::TextWrapped("%s", command.c_str());
+						ImGui::SameLine();
+						if (ImGui::SmallButton("Copy##command"))
+							ImGui::SetClipboardText(command.c_str());
 
-					ImGui::Spacing();
-					if (!status.active)
-					{
-						if (ImGui::Button("Start hosting"))
+						ImGui::Spacing();
+						ImGui::Separator();
+						ImGui::Spacing();
+
+						if (status.connected)
+							ImGui::TextColored(ImVec4(0.f, 1.f, 0.29f, 1.f), "connected");
+						else
+							ImGui::TextColored(ImVec4(1.f, 0.84f, 0.f, 1.f), "connecting...");
+
+						ImGui::SameLine();
+						if (status.viewers >= 0)
+							ImGui::Text("   viewers: %d", status.viewers);
+						else
+							ImGui::TextDisabled("   viewers: -");
+
+						ImGui::Text("Frames: %llu    %.1f KB", status.frames_sent, status.bytes_sent / 1024.0);
+
+						if (!status.error.empty())
 						{
-							std::string err;
-							if (!net::HostSession::Start(&err))
-								LOGF(WARNING, "[net] could not start hosting: {}", err);
+							ImGui::Spacing();
+							ImGui::TextWrapped("%s", status.error.c_str());
 						}
-					}
-					else
-					{
-						if (ImGui::Button("Stop hosting"))
+
+						ImGui::Spacing();
+						ImGui::Spacing();
+
+						if (ImGui::Button("Stop hosting", ImVec2(140, 32)))
 							net::HostSession::Stop();
 					}
-
-					ImGui::SameLine();
-					if (status.connected)
-						ImGui::TextColored(ImVec4(0.f, 1.f, 0.29f, 1.f), "connected");
-					else if (status.active)
-						ImGui::TextColored(ImVec4(1.f, 0.84f, 0.f, 1.f), "connecting...");
-					else
-						ImGui::TextDisabled("offline");
-
-					if (status.active)
-					{
-						ImGui::Text("Frames sent: %llu", status.frames_sent);
-						ImGui::SameLine();
-						ImGui::Text("  %.1f KB", status.bytes_sent / 1024.0);
-					}
-
-					if (!status.error.empty())
-					{
-						ImGui::Spacing();
-						ImGui::TextWrapped("%s", status.error.c_str());
-					}
-
-					ImGui::Spacing();
-					ImGui::Text("Publishing");
-					ImGui::Separator();
-
-					ImGui::SliderInt("Rate", &cfg::remote::rate, 10, 60, "%d fps");
-					ImGui::SetItemTooltip("Applies the next time hosting starts.");
-
-					ImGui::Checkbox("Publish player names", &cfg::remote::publish_names);
-					ImGui::Checkbox("Publish Steam IDs", &cfg::remote::publish_steam_ids);
-
-					ImGui::Spacing();
-					ImGui::TextDisabled("The viewer is a separate program and never touches game memory.");
 				}
 				else if (active_tab == Tab::WORLD)
 				{

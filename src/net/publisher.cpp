@@ -25,6 +25,7 @@ namespace net
 	namespace
 	{
 		WsClient g_client;
+		std::atomic<int> g_viewers{ -1 };
 
 		uint64_t NowMs()
 		{
@@ -341,6 +342,7 @@ namespace net
 		stats.frames_sent = self.frames_sent_;
 		stats.bytes_sent = self.bytes_sent_;
 		stats.dropped = self.dropped_;
+		stats.viewers = g_viewers.load();
 		stats.last_error = self.last_error_;
 		{
 			std::lock_guard<std::mutex> lock(self.message_mutex_);
@@ -362,6 +364,19 @@ namespace net
 
 			const std::string text(reinterpret_cast<const char*>(data), size);
 			LOGF(INFO, "[net] relay: {}", text);
+
+			if (text.find("\"viewers\"") != std::string::npos)
+			{
+				try
+				{
+					const json parsed = json::parse(text);
+					if (parsed.contains("count") && parsed["count"].is_number_integer())
+						g_viewers.store(parsed["count"].get<int>());
+				}
+				catch (...)
+				{
+				}
+			}
 
 			if (text.find("\"error\"") != std::string::npos)
 			{

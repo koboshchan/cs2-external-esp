@@ -15,6 +15,7 @@ namespace net
 		unsigned long long frames_sent = 0;
 		unsigned long long bytes_sent = 0;
 		unsigned long long dropped = 0;
+		int viewers = -1;
 
 		std::string server;
 		std::string room;

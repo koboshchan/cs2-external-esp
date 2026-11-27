@@ -80,35 +80,51 @@ func parseFlags() options {
 	flag.StringVar(&o.rect, "rect", "", "overlay rect as x,y,w,h (default: the CS2 window)")
 	flag.Parse()
 
-	o.server = resolveServerURL(o.server)
 	return o
 }
 
 func main() {
 	o := parseFlags()
 
+	// Saved settings fill anything the command line did not provide, so the
+	// app works by double-clicking with no arguments at all.
+	cfg := loadConfig()
+	if o.server == "" {
+		o.server = cfg.Server
+	}
 	if o.room == "" {
-		fmt.Fprintln(os.Stderr, "error: --room is required (the host shows it in the Host tab)")
-		os.Exit(2)
+		o.room = cfg.Room
 	}
 	if o.key == "" {
-		fmt.Fprintln(os.Stderr, "error: --key is required (the host shows the viewer key)")
-		os.Exit(2)
+		o.key = cfg.Key
 	}
-
-	relay := &Relay{URL: o.server, Room: o.room, Key: o.key}
+	if o.me == "" {
+		o.me = cfg.Me
+	}
+	o.server = resolveServerURL(o.server)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	go relay.Run(ctx)
-
-	if err := runUI(ctx, relay, o); err != nil {
+	relay, err := runUI(ctx, o)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "viewer stopped:", err)
 		os.Exit(1)
 	}
 
-	printSummary(relay, o)
+	if relay != nil {
+		printSummary(relay, o)
+	}
+}
+
+// startRelay connects in the background; cancel stops it.
+func startRelay(ctx context.Context, o options) (*Relay, context.CancelFunc) {
+	relayCtx, cancel := context.WithCancel(ctx)
+
+	relay := &Relay{URL: o.server, Room: o.room, Key: o.key}
+	go relay.Run(relayCtx)
+
+	return relay, cancel
 }
 
 func printSummary(relay *Relay, o options) {

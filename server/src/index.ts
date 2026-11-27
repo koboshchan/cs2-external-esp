@@ -40,6 +40,11 @@ function sendError(ws: WebSocket, code: string, message: string): void {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
 }
 
+function notifyViewers(room: Room): void {
+  if (!room.host || room.host.readyState !== WebSocket.OPEN) return;
+  room.host.send(JSON.stringify({ t: 'viewers', count: room.viewers.size }));
+}
+
 function broadcast(room: Room, data: string | Buffer, binary: boolean): number {
   let sent = 0;
   for (const viewer of room.viewers.keys()) {
@@ -169,6 +174,7 @@ function handleHello(ws: WebSocket, session: Session, msg: HelloMessage): void {
     }));
 
     broadcast(room, JSON.stringify({ t: 'host_online', room: room.id }), false);
+    notifyViewers(room);
     log('host_join', { room: room.id, viewers: room.viewers.size });
     return;
   }
@@ -203,6 +209,7 @@ function handleHello(ws: WebSocket, session: Session, msg: HelloMessage): void {
 
     if (room.lastFrame) ws.send(room.lastFrame, { binary: true });
 
+    notifyViewers(room);
     log('viewer_join', { room: room.id, viewers: room.viewers.size, host_online: room.hostOnline });
     return;
   }
@@ -226,6 +233,7 @@ function onClose(ws: WebSocket, session: Session): void {
   if (session.role === 'viewer') {
     room.viewers.delete(ws);
     room.touchedAt = Date.now();
+    notifyViewers(room);
     log('viewer_leave', { room: room.id, viewers: room.viewers.size });
   }
 }

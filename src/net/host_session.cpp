@@ -106,6 +106,7 @@ namespace net
 		status.frames_sent = stats.frames_sent;
 		status.bytes_sent = stats.bytes_sent;
 		status.dropped = stats.dropped;
+		status.viewers = stats.viewers;
 
 		if (!stats.last_message.empty())
 			status.error = stats.last_message;

@@ -19,6 +19,7 @@ namespace net
 		uint64_t frames_sent = 0;
 		uint64_t bytes_sent = 0;
 		uint64_t dropped = 0;
+		int viewers = -1; // -1 = unknown (older relay)
 		int last_error = 0;
 		std::string last_message;
 	};

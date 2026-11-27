@@ -187,14 +187,6 @@ type overlayCanvas struct {
 
 func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 	switch message {
-	case wmHotkey:
-		switch wParam {
-		case hotkeyNextPlayer:
-			requestNextPlayer()
-		case hotkeyQuit:
-			overlayQuit.Store(true)
-		}
-		return 0
 	case wmDestroy:
 		overlayQuit.Store(true)
 		return 0
@@ -250,8 +242,6 @@ func newOverlayCanvas(o options) (*overlayCanvas, error) {
 	}
 	c.hwnd = hwnd
 
-	pRegisterHotKey.Call(hwnd, hotkeyNextPlayer, 0, vkF8)
-	pRegisterHotKey.Call(hwnd, hotkeyQuit, 0, vkEnd)
 	pShowWindow.Call(hwnd, swShowNoActivate)
 
 	screenDC, _, _ := pGetDC.Call(0)
@@ -314,10 +304,12 @@ func newOverlayCanvas(o options) (*overlayCanvas, error) {
 
 func (c *overlayCanvas) Opaque() bool { return false }
 
+func (c *overlayCanvas) Show() { pShowWindow.Call(c.hwnd, swShowNoActivate) }
+
+func (c *overlayCanvas) Hide() { pShowWindow.Call(c.hwnd, swHide) }
+
 func (c *overlayCanvas) Close() {
 	if c.hwnd != 0 {
-		pUnregisterHotKey.Call(c.hwnd, hotkeyNextPlayer)
-		pUnregisterHotKey.Call(c.hwnd, hotkeyQuit)
 		pDestroyWindow.Call(c.hwnd)
 		c.hwnd = 0
 	}
@@ -612,39 +604,107 @@ func findGameWindow() uintptr {
 	return 0
 }
 
-func runUI(ctx context.Context, relay *Relay, o options) error {
-	c, err := newOverlayCanvas(o)
+func runUI(ctx context.Context, o options) (*Relay, error) {
+	cw, err := newConnectWindow(o)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer c.Close()
 
-	sc := newScene(relay, o)
+	var (
+		relay  *Relay
+		cancel context.CancelFunc
+		canvas *overlayCanvas
+		sc     *scene
+	)
+
+	defer func() {
+		if cancel != nil {
+			cancel()
+		}
+		if canvas != nil {
+			canvas.Close()
+		}
+		cw.Close()
+	}()
+
+	connect := func(server, room, key string) error {
+		o.server = resolveServerURL(server)
+		o.room = room
+		o.key = key
+		saveConfig(viewerConfig{Server: o.server, Room: o.room, Key: o.key, Me: o.me})
+
+		if cancel != nil {
+			cancel()
+		}
+		relay, cancel = startRelay(ctx, o)
+
+		if canvas == nil {
+			c, err := newOverlayCanvas(o)
+			if err != nil {
+				return err
+			}
+			canvas = c
+		}
+		sc = newScene(relay, o)
+
+		cw.Hide()
+		canvas.Show()
+		return nil
+	}
+
+	if o.room != "" && o.key != "" {
+		if err := connect(o.server, o.room, o.key); err != nil {
+			return nil, err
+		}
+	}
+
 	start := time.Now()
 	lastLog := time.Now()
 
 	for {
 		if ctx.Err() != nil || overlayQuit.Load() {
-			return nil
+			break
 		}
 		if o.seconds > 0 && time.Since(start) > time.Duration(o.seconds)*time.Second {
-			return nil
+			break
 		}
 
-		sc.update()
-		sc.draw(c)
-		c.Present()
+		cw.Pump()
 
-		if time.Since(lastLog) > 2*time.Second {
-			lastLog = time.Now()
-			snap := relay.Snapshot()
-			fmt.Printf("connected=%v host=%v frames=%d bytes=%d gaps=%d age=%s rect=%dx%d\n",
-				snap.Status.Connected, snap.Status.HostOnline, snap.Frames, snap.Bytes, snap.Gaps,
-				ageOf(snap.FrameAt), c.width, c.height)
+		if cw.TakeConnect() {
+			server, room, key := cw.Values()
+			if room == "" || key == "" {
+				cw.SetStatus("Room code and viewer key are required.")
+			} else if err := connect(server, room, key); err != nil {
+				cw.SetStatus("Could not start the overlay: " + err.Error())
+			}
+		}
+
+		if overlayShowConnect.Swap(false) {
+			cw.Show()
+			if canvas != nil {
+				canvas.Hide()
+			}
+		}
+
+		if canvas != nil && !cw.Visible() {
+			sc.update()
+			sc.draw(canvas)
+			canvas.Present()
+
+			if time.Since(lastLog) > 2*time.Second {
+				lastLog = time.Now()
+				snap := relay.Snapshot()
+				fmt.Printf("connected=%v host=%v frames=%d bytes=%d gaps=%d age=%s rect=%dx%d\n",
+					snap.Status.Connected, snap.Status.HostOnline, snap.Frames, snap.Bytes, snap.Gaps,
+					ageOf(snap.FrameAt), canvas.width, canvas.height)
+			}
 		}
 
 		time.Sleep(16 * time.Millisecond)
 	}
+
+	return relay, nil
 }
 
 func parseRect(s string) (rect, error) {
