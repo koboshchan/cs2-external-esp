@@ -219,7 +219,8 @@ func projectionStats(f *Frame, o options) (projected, visible int, maxCameraErro
 			continue
 		}
 		projected++
-		if _, ok := Project(m, p.EyePos, width, height); ok {
+		if sp, ok := Project(m, p.EyePos, width, height); ok &&
+			sp.X >= 0 && sp.X <= width && sp.Y >= 0 && sp.Y <= height {
 			visible++
 		}
 	}

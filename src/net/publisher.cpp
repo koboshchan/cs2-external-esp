@@ -249,6 +249,8 @@ namespace net
 				p.pos = { std::cos(t + i) * 400.f, std::sin(t + i) * 400.f, 0.f };
 				p.vel = { 0.f, 0.f, 0.f };
 				p.eye_angles = { 0.f, 0.f };
+				p.eye_pos = { p.pos.x, p.pos.y, p.pos.z + 64.f };
+				p.fov = 90.f;
 
 				for (int b = 1; b <= 7; b++)
 				{
