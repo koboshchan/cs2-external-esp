@@ -24,7 +24,8 @@ Start it with no arguments. A launcher window opens:
 5. **Start overlay**.
 
 The overlay is click-through, always on top, and follows that window's client
-area. `F9` returns to the launcher, `F8` cycles players, `END` quits.
+area. The camera is always the **host's**: what the host is facing is what you
+see, and nothing on the viewer side can change the view. `F9` returns to the launcher, `F8` cycles players, `END` quits.
 
 Settings are saved, so later launches only need Connect → player → window →
 Start.
@@ -38,7 +39,7 @@ Same flow, native AppKit controls:
 
 1. **Server / Room code / Viewer key** — `Cmd+V` pastes.
 2. **Connect**.
-3. **You are** — pick your player from the live list.
+3. **Hide player** — optional; hides one player from the overlay.
 4. **Overlay window** — pick any window (a stream, a video, anything).
 5. **Start overlay**.
 

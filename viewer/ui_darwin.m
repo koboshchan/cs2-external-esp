@@ -228,7 +228,7 @@ void ov_launcher_create(const char *server, const char *room, const char *key) {
     gStatusLabel.maximumNumberOfLines = 3;
     [content addSubview:gStatusLabel];
 
-    [content addSubview:makeLabel(NSMakeRect(16, 360, 120, 20), @"You are")];
+    [content addSubview:makeLabel(NSMakeRect(16, 360, 120, 20), @"Hide player")];
     gPlayerPopup = [[OvPopUpButton alloc] initWithFrame:NSMakeRect(16, 328, 440, 28) pullsDown:NO];
     [content addSubview:gPlayerPopup];
 

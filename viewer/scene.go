@@ -104,6 +104,17 @@ func nextPlayerIndex(players []Player, current *Player) int8 {
 	return players[order[(position+1)%len(order)]].Index
 }
 
+// hiddenPlayer is the optional player to leave out of the render (usually the
+// viewer's own pawn when they are in the same match).
+func (s *scene) hiddenPlayer(f *Frame) *Player {
+	if s.selected >= 0 {
+		if p := f.PlayerByIndex(int(s.selected)); p != nil {
+			return p
+		}
+	}
+	return nil
+}
+
 func (s *scene) currentPlayer(f *Frame) *Player {
 	if s.selected >= 0 {
 		if p := f.PlayerByIndex(int(s.selected)); p != nil {
@@ -128,15 +139,19 @@ func (s *scene) draw(c canvas) {
 	}
 
 	f := snap.Frame
-	me := s.currentPlayer(f)
 
-	if me == nil {
-		c.Text(16, 16, "no players in snapshot", colorDim)
-		return
+	// The view is entirely the host's: its camera, its angles, its FOV. The
+	// viewer's own mouse never influences it.
+	camera := f.Camera
+	if camera.HostFov <= 1 || camera.HostFov > 179 {
+		camera.HostFov = 90
 	}
 
 	aspect := w / h
-	m := BuildViewMatrix(me.EyePos, me.EyeAngles, me.Fov, aspect, f.Camera.FovMode)
+	m := BuildViewMatrix(camera.HostEyePos, camera.HostEyeAngles, camera.HostFov, aspect, camera.FovMode)
+
+	host := f.PlayerByIndex(int(camera.HostIndex))
+	hidden := s.hiddenPlayer(f)
 
 	if c.Opaque() {
 		s.drawGrid(c, w, h)
@@ -144,16 +159,27 @@ func (s *scene) draw(c canvas) {
 
 	for i := range f.Players {
 		p := &f.Players[i]
-		if p.Index == me.Index || !p.Alive() {
+		if !p.Alive() {
 			continue
 		}
-		s.drawPlayer(c, m, w, h, p, p.Team == me.Team)
+		if host != nil && p.Index == host.Index {
+			continue // the camera's own player
+		}
+		if hidden != nil && p.Index == hidden.Index {
+			continue
+		}
+		mate := host != nil && p.Team == host.Team
+		s.drawPlayer(c, m, w, h, p, mate)
 	}
 
 	s.drawBomb(c, m, w, h, f)
 
-	hud := fmt.Sprintf("room %s   seq %d   %s ago   players %d   you: %s (%d)",
-		snap.Status.Room, f.Seq, ageOf(snap.FrameAt), len(f.Players), me.Name, me.Index)
+	viewer := "host"
+	if host != nil {
+		viewer = "host " + host.Name
+	}
+	hud := fmt.Sprintf("room %s   seq %d   %s ago   players %d   view: %s",
+		snap.Status.Room, f.Seq, ageOf(snap.FrameAt), len(f.Players), viewer)
 	c.Text(16, 16, hud, color.RGBA{200, 205, 215, 255})
 
 	c.Text(16, h-24, controlsHint, colorDim)

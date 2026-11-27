@@ -157,13 +157,13 @@ func printSummary(relay *Relay, o options) {
 	var cameraError float32
 
 	if snap.Frame != nil {
-		if p := selectPlayer(snap.Frame, o); p != nil {
+		if p := snap.Frame.PlayerByIndex(int(snap.Frame.Camera.HostIndex)); p != nil {
 			me = p.Name
 		}
 		projected, visible, cameraError = projectionStats(snap.Frame, o)
 	}
 
-	fmt.Printf("\nsummary: frames=%d bytes=%d gaps=%d players=%d you=%q projected=%d on_screen=%d camera_error=%.6f\n",
+	fmt.Printf("\nsummary: frames=%d bytes=%d gaps=%d players=%d host=%q projected=%d on_screen=%d camera_error=%.6f\n",
 		snap.Frames, snap.Bytes, snap.Gaps, playerCount(snap.Frame), me, projected, visible, cameraError)
 }
 
@@ -206,19 +206,20 @@ func playerCount(f *Frame) int {
 // else, which is exactly what the renderer does. It also compares the built
 // matrix with the host's real matrix for the host's own player.
 func projectionStats(f *Frame, o options) (projected, visible int, maxCameraError float32) {
-	me := selectPlayer(f, o)
-	if me == nil {
-		return 0, 0, 0
+	// Same camera the renderer uses: the host's.
+	camera := f.Camera
+	if camera.HostFov <= 1 || camera.HostFov > 179 {
+		camera.HostFov = 90
 	}
 
 	const width, height = 1920.0, 1080.0
 	aspect := float32(width / height)
 
-	m := BuildViewMatrix(me.EyePos, me.EyeAngles, me.Fov, aspect, f.Camera.FovMode)
+	m := BuildViewMatrix(camera.HostEyePos, camera.HostEyeAngles, camera.HostFov, aspect, camera.FovMode)
 
 	for i := range f.Players {
 		p := &f.Players[i]
-		if p.Index == me.Index || !p.Alive() {
+		if p.Index == camera.HostIndex || !p.Alive() {
 			continue
 		}
 		projected++

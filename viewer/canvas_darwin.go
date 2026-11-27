@@ -371,10 +371,11 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 				launcherStatus("Connect first.")
 			case windowIndex < 0:
 				launcherStatus("Pick the window the overlay should attach to.")
-			case playerIndex < 0 || playerIndex >= len(players):
-				launcherStatus("Pick which player you are.")
 			default:
-				index := players[playerIndex].Index
+				index := int8(-1)
+				if playerIndex >= 0 && playerIndex < len(players) {
+					index = players[playerIndex].Index
+				}
 				o.meIndex = int(index)
 
 				if canvas == nil {

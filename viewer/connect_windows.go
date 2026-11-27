@@ -230,7 +230,7 @@ func newConnectWindow(o options) (*connectWindow, error) {
 	cw.button("Connect", idGo, 110, 130, 120, 30)
 	cw.status = cw.text(idStatus, 244, 136, 300, "Paste the room code and viewer key from the host.")
 
-	cw.label("You are", 16, 180)
+	cw.label("Hide player", 16, 180)
 	cw.playerList = cw.listBox(idPlayerList, 16, 200, 520, 140)
 
 	cw.label("Overlay window", 16, 352)
