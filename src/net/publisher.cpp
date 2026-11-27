@@ -66,9 +66,9 @@ namespace net
 			return std::string(data, len);
 		}
 
-		const Player* FindCameraPlayer(const Snapshot& s)
+		const ::Player* FindCameraPlayer(const Snapshot& s)
 		{
-			const Player* local = nullptr;
+			const ::Player* local = nullptr;
 			for (const auto& p : s.players)
 			{
 				if (p.localplayer)
@@ -99,12 +99,12 @@ namespace net
 			return local;
 		}
 
-		Vec3 EyePosition(const Player& p)
+		Vec3 EyePosition(const ::Player& p)
 		{
 			return { p.pos.x + p.view_offset.x, p.pos.y + p.view_offset.y, p.pos.z + p.view_offset.z };
 		}
 
-		uint32_t PlayerFlags(const Player& p)
+		uint32_t PlayerFlags(const ::Player& p)
 		{
 			uint32_t f = 0;
 			if (p.alive) f |= kPlayerAlive;
@@ -128,13 +128,13 @@ namespace net
 			f.map_name = ReadCString(s.globals.map_name, sizeof(s.globals.map_name));
 			f.flags = kFrameHostAlive;
 
-			const Player* cam = FindCameraPlayer(s);
+			const ::Player* cam = FindCameraPlayer(s);
 			if (cam)
 			{
 				f.camera.index = cam->index;
 				f.camera.team = static_cast<uint8_t>(cam->team);
 				f.camera.eye_pos = EyePosition(*cam);
-				f.camera.eye_angles = cam->eye_angles;
+				f.camera.eye_angles = { cam->eye_angles.x, cam->eye_angles.y };
 				f.camera.fov = cam->fov > 1.f && cam->fov < 180.f ? cam->fov : 90.f;
 
 				const auto mode = cam->observer_services.mode;
@@ -149,7 +149,7 @@ namespace net
 			{
 				f.camera.host_index = s.local.index;
 				f.camera.host_eye_pos = EyePosition(s.local);
-				f.camera.host_eye_angles = s.local.eye_angles;
+				f.camera.host_eye_angles = { s.local.eye_angles.x, s.local.eye_angles.y };
 				f.camera.host_fov = s.local.fov > 1.f && s.local.fov < 180.f ? s.local.fov : 90.f;
 			}
 
@@ -167,7 +167,7 @@ namespace net
 			f.players.reserve(s.players.size());
 			for (const auto& p : s.players)
 			{
-				Player np;
+				net::Player np;
 				np.index = p.index;
 				np.team = static_cast<uint8_t>(p.team);
 				np.health = static_cast<uint16_t>(p.health < 0 ? 0 : p.health);
@@ -180,7 +180,7 @@ namespace net
 				np.ammo = static_cast<uint16_t>(p.ammo < 0 ? 0 : p.ammo);
 				np.pos = { p.pos.x, p.pos.y, p.pos.z };
 				np.vel = { p.vel.x, p.vel.y, p.vel.z };
-				np.eye_angles = p.eye_angles;
+				np.eye_angles = { p.eye_angles.x, p.eye_angles.y };
 
 				// Bones 0..23 are the ones the skeleton/box renderer uses.
 				for (int b = 0; b < 24 && b < static_cast<int>(p.bone_list.size()); b++)
