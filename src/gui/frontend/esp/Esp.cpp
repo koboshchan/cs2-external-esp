@@ -500,8 +500,9 @@ void Esp::RenderAimbotFov()
 		floorf(io.DisplaySize.x * 0.5f),
 		floorf(io.DisplaySize.y * 0.5f));
 
-	// Convert the configured FOV angle into an approximate screen radius
-	float radius = cfg::aimbot::fov * io.DisplaySize.y / 90.0f;
+	// Keep the circle in sync with the aimbot's screen-space FOV radius
+	// (Aimbot uses cfg::aimbot::fov * 20.0f pixels when picking a target)
+	float radius = cfg::aimbot::fov * 20.0f;
 
 	d->AddCircle(
 		center,

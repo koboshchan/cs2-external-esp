@@ -4,7 +4,6 @@
 #include "core/offsets/Offsets.hpp"
 
 #include <cmath>
-#include <cstdlib>
 
 void Aimbot::Run() {
     auto cache = Cache::CopySnapshot();
@@ -112,11 +111,11 @@ void Aimbot::AimAt(Vec3_t target, view_matrix_t matrix) {
     Vec3_t local_pos = local_player->pos + local_player->view_offset;
     
     Vec3_t delta = target - local_pos;
-    float distance = sqrt(delta.x * delta.x + delta.y * delta.y);
-    
+    float distance = std::sqrt(delta.x * delta.x + delta.y * delta.y);
+
     // Calculate absolute target angles
-    float target_yaw = atan2f(delta.y, delta.x) * 57.295779513f;
-    float target_pitch = -atan(delta.z / distance) * 57.295779513f;
+    float target_yaw = std::atan2(delta.y, delta.x) * 57.295779513f;
+    float target_pitch = -std::atan(delta.z / distance) * 57.295779513f;
     
     // Read ACTUAL current view angles from dwViewAngles (not cached eye_angles)
     float current_pitch, current_yaw;
