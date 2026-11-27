@@ -149,9 +149,8 @@ bool Config::ReadImpl() {
 		// remote
 		cfg::remote::enabled = data["remote"].value("enabled", false);
 		cfg::remote::url = net::ResolveServerUrl(data["remote"].value("url", std::string{}));
-		cfg::remote::room = data["remote"].value("room", std::string{});
-		cfg::remote::token = data["remote"].value("token", std::string{});
-		cfg::remote::viewer_key = data["remote"].value("viewer_key", std::string{});
+		// room/token/viewer_key are per-session and never persisted: a stale
+		// room would make the host retry a room that no longer exists.
 		cfg::remote::rate = data["remote"].value("rate", 30);
 		cfg::remote::publish_names = data["remote"].value("publish_names", true);
 		cfg::remote::publish_steam_ids = data["remote"].value("publish_steam_ids", true);
@@ -294,9 +293,6 @@ bool Config::WriteImpl() {
 	// remote
 	data["remote"]["enabled"] = cfg::remote::enabled;
 	data["remote"]["url"] = cfg::remote::url;
-	data["remote"]["room"] = cfg::remote::room;
-	data["remote"]["token"] = cfg::remote::token;
-	data["remote"]["viewer_key"] = cfg::remote::viewer_key;
 	data["remote"]["rate"] = cfg::remote::rate;
 	data["remote"]["publish_names"] = cfg::remote::publish_names;
 	data["remote"]["publish_steam_ids"] = cfg::remote::publish_steam_ids;

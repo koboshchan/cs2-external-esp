@@ -140,7 +140,22 @@ build the rest on an unvalidated matrix.
 offsets, same mechanism as `m_vecCsViewPunchAngle`). Fall back to 90 when the
 field is missing, and note that scoped weapons change it.
 
-## 5. Transport
+## 5. Roles and binaries
+
+Two programs, no shared process:
+
+* **Host** — this C++ application. New **Host** menu tab: pick the server,
+  press *Create room*, and it shows a room code plus a viewer key with copy
+  buttons, then publishes at the configured rate.
+* **Viewer** — a separate Go binary (`viewer/`), cross-built for macOS and
+  Windows. It never opens a handle to `cs2.exe`; it only speaks to the relay.
+
+Relay default: `wss://cs2.kjt.lol/ws`. The `CS2ESPSERVER` environment
+variable overrides it (accepts `host`, `host:port`, `ws://…`, `http://…`);
+command-line `--url` overrides both. Room codes are per session and are not
+written to `config.json`, so a restart never retries a dead room.
+
+## 6. Transport
 
 **WebSocket (`ws://` / `wss://`)** with binary frames and small JSON control
 messages.
@@ -164,7 +179,7 @@ server -> client   welcome { room, host_online, viewers, proto }
 The relay never parses `snapshot`. It validates size and version from the
 12-byte prefix, caches the latest frame per room for instant join, and fans out.
 
-## 6. Relay server (Node/TypeScript)
+## 7. Relay server (Node/TypeScript)
 
 Single service, no database.
 
@@ -192,7 +207,7 @@ Behaviour:
 Deploy: systemd unit + Caddy for TLS, or Docker. Health endpoint for uptime
 checks. No secrets in the repo; tokens are per-room and generated at runtime.
 
-## 7. Host changes
+## 8. Host changes
 
 New module `src/net/`:
 
@@ -214,7 +229,7 @@ Publisher:
 Integration point: `Engine::Thread()` gains one line, or `main` starts the
 publisher after `Engine::Init()` when `--mode=host`.
 
-## 8. Viewer changes
+## 9. Viewer changes
 
 The cleanest seam is the cache. Today `Esp` calls `Cache::CopySnapshot()`.
 
@@ -254,7 +269,7 @@ Identity selection:
 * if the chosen player dies and spectates, the host's `camera_index` follows
   the observer target, so the ESP keeps working in spectator mode.
 
-## 9. Latency and smoothness
+## 10. Latency and smoothness
 
 * Host 30 Hz, viewer renders 60+ fps.
 * Keep the last two frames, interpolate positions/angles by `host_time_ms`
@@ -263,7 +278,7 @@ Identity selection:
   show "stale".
 * No lag compensation for aim — the viewer is display-only.
 
-## 10. Trust boundary
+## 11. Trust boundary
 
 The viewer consumes data from a server and a host it does not control. Treat
 every byte as hostile:
@@ -276,7 +291,7 @@ every byte as hostile:
 * cap frames per second accepted from the relay;
 * the viewer must remain fully functional (menu, config) if the relay lies.
 
-## 11. Build and repo layout
+## 12. Build and repo layout
 
 ```
 src/net/                    host transport + protocol (WinHTTP websocket)
@@ -296,7 +311,7 @@ docs/REMOTE_ESP_PLAN.md     this file
   `--net-selftest[=SECONDS]` to publish synthetic frames without the game.
 * CI: a second workflow builds `server/` (`npm ci && tsc`) — no MSVC needed.
 
-## 12. Milestones
+## 13. Milestones
 
 | # | Deliverable | Acceptance | Est. | Status |
 |---|-------------|------------|------|--------|
@@ -316,7 +331,7 @@ anywhere.
 
 Total ≈ 10–14 dev days. Phases 2 and 5 are the schedule risks.
 
-## 13. Risks
+## 14. Risks
 
 | Risk | Mitigation |
 |------|------------|
@@ -328,7 +343,7 @@ Total ≈ 10–14 dev days. Phases 2 and 5 are the schedule risks.
 | Data privacy (names, steam ids) | `publish_names` / `publish_steam_ids` toggles |
 | Viewer still detectable | no memory access, but an overlay + relay connection is still a cheat; document the risk, no promises |
 
-## 14. Open questions
+## 15. Open questions
 
 1. Should the host also be able to publish while playing normally (yes, by
    default), or only in a dedicated "host" mode?
