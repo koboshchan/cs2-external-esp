@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 # Builds the viewer for macOS (arm64) and Windows (amd64).
 #
-# Ebiten window builds for macOS (arm64) and Windows (amd64).
+# macOS: Ebiten window (preview).
+# Windows: layered click-through overlay, pure Go (no cgo).
 set -eu
 
 cd "$(dirname "$0")"

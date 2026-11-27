@@ -65,6 +65,7 @@ type options struct {
 	me       string
 	meIndex  int
 	seconds  int
+	rect     string
 }
 
 func parseFlags() options {
@@ -76,6 +77,7 @@ func parseFlags() options {
 	flag.StringVar(&o.me, "me", "", "your steam id or player name")
 	flag.IntVar(&o.meIndex, "me-index", -1, "your player index (fallback when ids are hidden)")
 	flag.IntVar(&o.seconds, "seconds", 0, "quit after N seconds (0 = run until ESC)")
+	flag.StringVar(&o.rect, "rect", "", "overlay rect as x,y,w,h (default: the CS2 window)")
 	flag.Parse()
 
 	o.server = resolveServerURL(o.server)
