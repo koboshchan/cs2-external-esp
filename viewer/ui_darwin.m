@@ -92,6 +92,7 @@ static NSString *const kOvFontName = @"Menlo";
 
   [gLauncher makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
+  [gLauncher makeKeyWindow];
 }
 
 - (void)prevPlayer:(id)sender {
@@ -265,8 +266,14 @@ void ov_launcher_create(const char *server, const char *room, const char *key) {
 
     [gLauncher makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
-    [NSApp activate];
     [gLauncher makeFirstResponder:gRoomField];
+
+    // Activation is sometimes ignored while the process is still starting.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+      [NSApp activateIgnoringOtherApps:YES];
+      [gLauncher makeKeyAndOrderFront:nil];
+    });
   }
 }
 
@@ -315,6 +322,10 @@ void ov_launcher_set_players(const char *newline_separated) {
   NSString *all = [NSString stringWithUTF8String:newline_separated ?: ""];
   NSArray *items = all.length ? [all componentsSeparatedByString:@"\n"] : @[];
 
+  if (items.count == 0) {
+    items = @[ @"waiting for the host..." ];
+  }
+
   NSInteger selected = gPlayerPopup.indexOfSelectedItem;
   [gPlayerPopup removeAllItems];
   [gPlayerPopup addItemsWithTitles:items];
@@ -337,6 +348,10 @@ void ov_launcher_set_windows(const char *newline_separated) {
   NSString *all = [NSString stringWithUTF8String:newline_separated ?: ""];
   NSArray *items = all.length ? [all componentsSeparatedByString:@"\n"] : @[];
 
+  if (items.count == 0) {
+    items = @[ @"no windows found - press Refresh" ];
+  }
+
   NSInteger selected = gWindowPopup.indexOfSelectedItem;
   [gWindowPopup removeAllItems];
   [gWindowPopup addItemsWithTitles:items];
@@ -353,17 +368,19 @@ void ov_launcher_set_windows(const char *newline_separated) {
 void ov_ui_test(void) {
   if (!gPlayerPopup) return;
 
-  __block BOOL sawMenu = NO;
-  __block NSInteger itemCount = 0;
+  fprintf(stderr, "[ui] before items=%ld enabled=%d key_window=%d active=%d\n",
+          (long)gPlayerPopup.numberOfItems, gPlayerPopup.isEnabled ? 1 : 0,
+          gLauncher.isKeyWindow ? 1 : 0, NSApp.isActive ? 1 : 0);
 
-  NSTimer *probe = [NSTimer timerWithTimeInterval:0.6 repeats:NO block:^(NSTimer *t) {
+  __block BOOL sawMenu = NO;
+
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
+                 dispatch_get_main_queue(), ^{
     for (NSWindow *w in [NSApp windows]) {
-      NSString *cls = NSStringFromClass([w class]);
-      if ([cls containsString:@"Menu"]) {
-        sawMenu = YES;
-      }
+      if ([NSStringFromClass([w class]) containsString:@"Menu"]) sawMenu = YES;
     }
-    itemCount = (NSInteger)gPlayerPopup.numberOfItems;
+    fprintf(stderr, "[ui] during: items=%ld menu_window=%d\n",
+            (long)gPlayerPopup.numberOfItems, sawMenu ? 1 : 0);
 
     NSEvent *escape = [NSEvent keyEventWithType:NSEventTypeKeyDown
                                       location:NSZeroPoint
@@ -376,12 +393,11 @@ void ov_ui_test(void) {
                                      isARepeat:NO
                                        keyCode:53];
     [NSApp postEvent:escape atStart:YES];
-  }];
-  [[NSRunLoop mainRunLoop] addTimer:probe forMode:NSRunLoopCommonModes];
+  });
 
   [gPlayerPopup performClick:nil];
 
-  fprintf(stderr, "[ui] popup items=%ld menu_window=%d\n", (long)itemCount, sawMenu ? 1 : 0);
+  fprintf(stderr, "[ui] after items=%ld\n", (long)gPlayerPopup.numberOfItems);
 }
 
 void ov_launcher_pick(int index) {

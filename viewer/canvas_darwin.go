@@ -274,6 +274,8 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 					ptr := cstr(strings.Join(lines, "\n"))
 					C.ov_launcher_set_players(ptr)
 					freeCString(ptr)
+
+					launcherStatus(fmt.Sprintf("Connected - %d players. Pick yourself and the window, then Start.", len(players)))
 				}
 			}
 		}

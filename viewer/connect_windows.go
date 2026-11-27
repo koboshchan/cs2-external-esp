@@ -375,6 +375,12 @@ func (c *connectWindow) RefreshPlayers(relay *Relay) {
 	pSendMessageW.Call(c.playerList, lbResetContent, 0, 0)
 	c.playerIndices = c.playerIndices[:0]
 
+	if len(players) == 0 {
+		ptr, _ := windows.UTF16PtrFromString("waiting for the host...")
+		pSendMessageW.Call(c.playerList, lbAddString, 0, uintptr(unsafe.Pointer(ptr)))
+		return
+	}
+
 	for _, p := range players {
 		team := "T"
 		if p.Team == 3 {
