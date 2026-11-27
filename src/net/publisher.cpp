@@ -9,11 +9,16 @@
 #include "core/offsets/Offsets.hpp"
 #include "config/Current.hpp"
 
+#include <windows.h>
+#include <timeapi.h>
+
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <random>
+
+#pragma comment(lib, "winmm.lib")
 
 namespace net
 {
@@ -289,6 +294,10 @@ namespace net
 			return false;
 		}
 
+		// 1 ms timer resolution: without it sleep_for(33ms) rounds up to
+		// ~46 ms on Windows and the frame rate drops to ~22 Hz.
+		timeBeginPeriod(1);
+
 		self.running_ = true;
 		self.thread_ = std::thread(&Publisher::Thread, &self);
 
@@ -308,6 +317,7 @@ namespace net
 
 		g_client.Close();
 		self.connected_ = false;
+		timeEndPeriod(1);
 	}
 
 	bool Publisher::IsRunning()
@@ -473,6 +483,8 @@ namespace net
 
 		std::string connect_error;
 
+		timeBeginPeriod(1);
+
 		g_client.SetOnMessage([](bool binary, const uint8_t* data, size_t size)
 		{
 			if (binary)
@@ -546,6 +558,7 @@ namespace net
 		}
 
 		g_client.Close();
+		timeEndPeriod(1);
 		std::fprintf(stderr, "[net] self-test sent %llu frames\n", static_cast<unsigned long long>(sent));
 		LOGF(INFO, "[net] self-test sent {} frames", sent);
 		return sent > 0 ? 0 : 6;
