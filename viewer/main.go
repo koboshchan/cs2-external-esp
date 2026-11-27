@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -67,6 +68,7 @@ type options struct {
 	seconds  int
 	rect     string
 	autostart bool
+	dump      string
 }
 
 func parseFlags() options {
@@ -80,12 +82,16 @@ func parseFlags() options {
 	flag.IntVar(&o.seconds, "seconds", 0, "quit after N seconds (0 = run until ESC)")
 	flag.StringVar(&o.rect, "rect", "", "overlay rect as x,y,w,h (default: the CS2 window)")
 	flag.BoolVar(&o.autostart, "autostart", false, "skip the launcher and bind to the CS2 window as soon as frames arrive")
+	flag.StringVar(&o.dump, "dump", "", "write the overlay bitmap to a PNG on exit (macOS, testing)")
 	flag.Parse()
 
 	return o
 }
 
 func main() {
+	// AppKit (macOS) requires windows to be created on the OS main thread.
+	runtime.LockOSThread()
+
 	o := parseFlags()
 
 	// Saved settings fill anything the command line did not provide, so the

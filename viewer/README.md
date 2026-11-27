@@ -34,8 +34,20 @@ Start.
 
 ## Run (macOS)
 
-The macOS build is a window, not an overlay (CS2 does not run on macOS). It
-opens a connect form: server, room, viewer key, then `TAB` cycles players.
+Same flow, native AppKit controls:
+
+1. **Server / Room code / Viewer key** — `Cmd+V` pastes.
+2. **Connect**.
+3. **You are** — pick your player from the live list.
+4. **Overlay window** — pick any window (a stream, a video, anything).
+5. **Start overlay**.
+
+The overlay is a borderless, transparent, click-through window at
+`NSScreenSaverWindowLevel` that follows the chosen window. A **CS2** menu bar
+item brings the launcher back or quits.
+
+CS2 does not run on macOS, so this overlays other windows (streams, captures);
+the Windows build is the one that overlays the game.
 
 On Windows `F9` reopens the connect window (to change room), `END` quits.
 The overlay itself is click-through, which is why the connect window exists.
@@ -58,8 +70,8 @@ Controls:
 
 | | Windows overlay | macOS window |
 |---|---|---|
-| next player | `F8` | `TAB` |
-| quit | `END` | `ESC` |
+| next player | `F8` | reopen the launcher |
+| quit | `END` | CS2 menu bar item |
 
 On Windows the overlay follows the CS2 window automatically. If detection
 fails (windowed mode with an unusual class), pin it manually:
@@ -117,7 +129,8 @@ camera.go          view matrix + projection, mirrors src/net/camera.hpp
 relay.go           websocket client, reconnect, latest-frame store
 scene.go           drawing logic shared by both canvases
 canvas_windows.go  layered click-through overlay (Win32 + GDI, no cgo)
-canvas_darwin.go   Ebiten window (preview)
+canvas_darwin.go   AppKit launcher + Core Graphics overlay (cgo)
+ui_darwin.m        Objective-C bridge for the above
 main.go            flags, player selection, summary
 *_test.go          golden frame, truncation, mutation fuzz, camera parity
 ```

@@ -38,11 +38,8 @@ type canvas interface {
 }
 
 // Overridden per platform: the Windows overlay is click-through, so it cannot
-// receive Tab and uses a global hotkey instead.
-var (
-	nextPlayerKey = "F8"
-	quitKey       = "END"
-)
+// receive keys and uses global hotkeys; macOS reopens the launcher instead.
+var controlsHint = "F8 = next player    END = quit"
 
 var nextPlayerRequested atomic.Bool
 
@@ -159,7 +156,7 @@ func (s *scene) draw(c canvas) {
 		snap.Status.Room, f.Seq, ageOf(snap.FrameAt), len(f.Players), me.Name, me.Index)
 	c.Text(16, 16, hud, color.RGBA{200, 205, 215, 255})
 
-	c.Text(16, h-24, nextPlayerKey+" = next player    "+quitKey+" = quit", colorDim)
+	c.Text(16, h-24, controlsHint, colorDim)
 
 	if !snap.Status.HostOnline {
 		c.Text(16, 34, "host offline - last frame shown", colorBomb)
