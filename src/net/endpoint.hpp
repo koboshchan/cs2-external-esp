@@ -58,10 +58,28 @@ namespace net
 		return scheme + rest;
 	}
 
+	inline std::string EnvValue(const char* name)
+	{
+#ifdef _WIN32
+		char* value = nullptr;
+		size_t length = 0;
+		if (_dupenv_s(&value, &length, name) == 0 && value)
+		{
+			std::string out(value);
+			free(value);
+			return out;
+		}
+		return {};
+#else
+		const char* value = std::getenv(name);
+		return value ? value : "";
+#endif
+	}
+
 	inline std::string ResolveServerUrl(const std::string& configured)
 	{
-		const char* env = std::getenv("CS2ESPSERVER");
-		const std::string raw = (env && *env) ? std::string(env) : configured;
+		const std::string env = EnvValue("CS2ESPSERVER");
+		const std::string raw = !env.empty() ? env : configured;
 
 		if (raw.empty())
 			return "wss://cs2.kjt.lol/ws";
