@@ -70,7 +70,8 @@ type options struct {
 	autostart bool
 	dump      string
 	pick      int
-	uiTest    bool
+	uiTest     bool
+	followTest bool
 }
 
 func parseFlags() options {
@@ -87,6 +88,7 @@ func parseFlags() options {
 	flag.StringVar(&o.dump, "dump", "", "write the overlay bitmap to a PNG on exit (macOS, testing)")
 	flag.IntVar(&o.pick, "pick", -1, "select the Nth player in the launcher automatically (testing)")
 	flag.BoolVar(&o.uiTest, "ui-test", false, "open the player dropdown, verify a menu window appears, then close it (testing)")
+	flag.BoolVar(&o.followTest, "follow-test", false, "create a window, move it, and verify the overlay bounds follow (testing)")
 	flag.Parse()
 
 	return o

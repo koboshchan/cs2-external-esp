@@ -43,7 +43,9 @@ Same flow, native AppKit controls:
 5. **Start overlay**.
 
 The overlay is a borderless, transparent, click-through window at
-`NSScreenSaverWindowLevel` that follows the chosen window. A **CS2** menu bar
+`NSScreenSaverWindowLevel`. Its frame is re-read from the chosen window every
+frame, so it follows moves and resizes live (a brief lookup miss keeps the
+last rect instead of flashing full screen). A **CS2** menu bar
 item brings the launcher back or quits.
 
 CS2 does not run on macOS, so this overlays other windows (streams, captures);

@@ -35,7 +35,9 @@ void ov_launcher_force_start(void);
 
 const char* ov_windows_list(void);
 int  ov_window_count(void);
-int  ov_window_bounds(int index, double* x, double* y, double* w, double* h);
+uint32_t ov_launcher_window_id(int index);
+int  ov_window_bounds_by_id(uint32_t wid, double* x, double* y, double* w, double* h);
+int  ov_follow_test(void);
 void ov_screen_size(double* w, double* h);
 
 void ov_overlay_create(void);
@@ -64,9 +66,18 @@ import (
 )
 
 type overlayCanvas struct {
-	windowIndex int
-	width       float32
-	height      float32
+	windowID uint32
+	width    float32
+	height   float32
+
+	// Last known window rect (top-left points), kept so a transient lookup
+	// failure does not make the overlay jump to full screen.
+	haveRect  bool
+	rectX     float64
+	rectY     float64
+	rectW     float64
+	rectH     float64
+	missCount int
 }
 
 func cstr(s string) *C.char {
@@ -82,8 +93,19 @@ func freeCString(p *C.char) {
 func (c *overlayCanvas) Begin() (float32, float32) {
 	var x, y, w, h C.double
 
-	if C.ov_window_bounds(C.int(c.windowIndex), &x, &y, &w, &h) == 0 {
-		// The bound window is gone: fall back to the whole screen.
+	// Re-read the window's frame every frame so the overlay follows moves and
+	// resizes. kCGWindowListOptionIncludingWindow makes this a single-window
+	// query, cheap enough for 60 Hz.
+	if c.windowID != 0 && C.ov_window_bounds_by_id(C.uint32_t(c.windowID), &x, &y, &w, &h) != 0 {
+		c.haveRect = true
+		c.rectX, c.rectY, c.rectW, c.rectH = float64(x), float64(y), float64(w), float64(h)
+		c.missCount = 0
+	} else if c.haveRect {
+		// Transient miss (window animating, app switching spaces): keep the
+		// last rect instead of flashing full screen.
+		c.missCount++
+		x, y, w, h = C.double(c.rectX), C.double(c.rectY), C.double(c.rectW), C.double(c.rectH)
+	} else {
 		C.ov_screen_size(&w, &h)
 		x, y = 0, 0
 	}
@@ -167,7 +189,8 @@ func largestWindow() int {
 
 	for i := 0; i < count; i++ {
 		var x, y, w, h C.double
-		if C.ov_window_bounds(C.int(i), &x, &y, &w, &h) == 0 {
+		id := C.ov_launcher_window_id(C.int(i))
+		if id == 0 || C.ov_window_bounds_by_id(id, &x, &y, &w, &h) == 0 {
 			continue
 		}
 		area := float64(w) * float64(h)
@@ -185,6 +208,11 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 
 	if o.uiTest {
 		fmt.Printf("fields: server=%q room=%q key=%q\n", launcherGet(0), launcherGet(1), launcherGet(2))
+	}
+
+	if o.followTest {
+		fmt.Printf("follow test: %d\n", int(C.ov_follow_test()))
+		return nil, nil
 	}
 
 	var (
@@ -302,7 +330,8 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 				canvas = &overlayCanvas{}
 			}
 
-			canvas.windowIndex = largestWindow()
+			largest := largestWindow()
+			canvas.windowID = uint32(C.ov_launcher_window_id(C.int(largest)))
 			selectedPlayerIndex = index
 			sc = newScene(relay, o)
 			sc.selected = index
@@ -353,7 +382,7 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 					canvas = &overlayCanvas{}
 				}
 
-				canvas.windowIndex = windowIndex
+				canvas.windowID = uint32(C.ov_launcher_window_id(C.int(windowIndex)))
 				selectedPlayerIndex = index
 				sc = newScene(relay, o)
 				sc.selected = index
@@ -362,6 +391,15 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 				C.ov_launcher_hide()
 				C.ov_overlay_show()
 			}
+		}
+
+		if started && canvas != nil && canvas.windowID != 0 && canvas.missCount > 90 {
+			// The overlaid window has been gone for ~1.5s: back to the launcher.
+			started = false
+			C.ov_overlay_hide()
+			refreshWindowList()
+			C.ov_launcher_show()
+			launcherStatus("The overlaid window closed.")
 		}
 
 		if started && canvas != nil {

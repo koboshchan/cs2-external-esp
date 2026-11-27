@@ -481,24 +481,44 @@ void ov_screen_size(double *w, double *h) {
   if (h) *h = frame.size.height;
 }
 
-// ov_window_bounds returns the window frame in screen points with a top-left
-// origin, matching the overlay coordinates.
+uint32_t ov_launcher_window_id(int index) {
+  if (!gWindowNumbers || index < 0 || index >= (int)gWindowNumbers.count) return 0;
+  return gWindowNumbers[index].unsignedIntValue;
+}
+
 int ov_window_count(void) {
   return gWindowBounds ? (int)gWindowBounds.count : 0;
 }
 
-int ov_window_bounds(int index, double *x, double *y, double *w, double *h) {
-  if (!gWindowBounds || index < 0 || index >= (int)gWindowBounds.count) return 0;
+// ov_window_bounds_by_id queries one window by CGWindowID, so the overlay can
+// follow moves and resizes every frame without re-enumerating everything.
+// The returned rect is in top-left screen points, which is what
+// ov_overlay_begin expects.
+int ov_window_bounds_by_id(uint32_t wid, double *x, double *y, double *w, double *h) {
+  if (wid == 0) return 0;
 
-  NSRect r = gWindowBounds[index].rectValue;
-  double screenHeight = [NSScreen mainScreen].frame.size.height;
+  CFArrayRef list = CGWindowListCopyWindowInfo(kCGWindowListOptionIncludingWindow, wid);
+  if (!list) return 0;
 
-  if (x) *x = r.origin.x;
-  if (y) *y = screenHeight - (r.origin.y + r.size.height);
-  if (w) *w = r.size.width;
-  if (h) *h = r.size.height;
+  int found = 0;
+  for (NSDictionary *info in (__bridge NSArray *)list) {
+    NSNumber *number = info[(id)kCGWindowNumber];
+    if (number.unsignedIntValue != wid) continue;
 
-  return 1;
+    NSDictionary *boundsDict = info[(id)kCGWindowBounds];
+    CGRect r = CGRectZero;
+    if (!boundsDict || !CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)boundsDict, &r)) continue;
+
+    if (x) *x = r.origin.x;
+    if (y) *y = r.origin.y;
+    if (w) *w = r.size.width;
+    if (h) *h = r.size.height;
+    found = 1;
+    break;
+  }
+
+  CFRelease(list);
+  return found;
 }
 
 // ---------------------------------------------------------------- overlay
@@ -662,6 +682,35 @@ int ov_selftest_dump(const char *path) {
   }
   CGImageRelease(image);
   return ok;
+}
+
+// ov_follow_test verifies that window bounds are re-read as the window moves.
+int ov_follow_test(void) {
+  NSWindow *probe = [[NSWindow alloc] initWithContentRect:NSMakeRect(120, 140, 400, 300)
+                                                styleMask:NSWindowStyleMaskTitled
+                                                  backing:NSBackingStoreBuffered
+                                                    defer:NO];
+  probe.title = @"follow test";
+  [probe orderFrontRegardless];
+  [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+
+  uint32_t wid = (uint32_t)probe.windowNumber;
+
+  double x1 = 0, y1 = 0, w1 = 0, h1 = 0;
+  int ok1 = ov_window_bounds_by_id(wid, &x1, &y1, &w1, &h1);
+
+  [probe setFrame:NSMakeRect(320, 220, 640, 480) display:NO];
+  [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+
+  double x2 = 0, y2 = 0, w2 = 0, h2 = 0;
+  int ok2 = ov_window_bounds_by_id(wid, &x2, &y2, &w2, &h2);
+
+  [probe orderOut:nil];
+
+  fprintf(stderr, "[follow] before %.0fx%.0f at %.0f,%.0f | after %.0fx%.0f at %.0f,%.0f\n",
+          w1, h1, x1, y1, w2, h2, x2, y2);
+
+  return (ok1 && ok2 && (w2 != w1 || h2 != h1)) ? 1 : 0;
 }
 
 // ov_overlay_dump writes the current overlay bitmap to a PNG, for tests.
