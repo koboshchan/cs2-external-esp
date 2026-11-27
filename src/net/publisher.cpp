@@ -369,7 +369,7 @@ namespace net
 			{
 				try
 				{
-					const json parsed = json::parse(text);
+					const nlohmann::json parsed = nlohmann::json::parse(text);
 					if (parsed.contains("count") && parsed["count"].is_number_integer())
 						g_viewers.store(parsed["count"].get<int>());
 				}
