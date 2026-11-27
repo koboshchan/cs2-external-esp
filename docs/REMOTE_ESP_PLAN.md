@@ -142,11 +142,13 @@ field is missing, and note that scoped weapons change it.
 
 ## 5. Transport
 
-**WebSocket over TLS (`wss://`)** — verified available: the vendored
-`libcurl.lib` is 8.4.0-DEV, Schannel-backed, and exports `curl_ws_send` /
-`curl_ws_recv`.
+**WebSocket (`ws://` / `wss://`)** with binary frames and small JSON control
+messages.
 
-Binary frames, no JSON on the hot path. Control messages are small JSON.
+The host uses **WinHTTP** (built into Windows) rather than the vendored
+libcurl: the bundled libcurl 8.4 build has no `ws`/`wss` protocols, and
+WinHTTP provides the upgrade plus Schannel TLS with no extra dependency. The
+Go viewer uses a normal WebSocket library.
 
 ```
 client -> server   hello   { role, room, token, proto }
@@ -160,7 +162,7 @@ server -> client   welcome { room, host_online, viewers, proto }
 ```
 
 The relay never parses `snapshot`. It validates size and version from the
-8-byte prefix, caches the latest frame per room for instant join, and fans out.
+12-byte prefix, caches the latest frame per room for instant join, and fans out.
 
 ## 6. Relay server (Node/TypeScript)
 
@@ -277,33 +279,40 @@ every byte as hostile:
 ## 11. Build and repo layout
 
 ```
-src/net/                    new module, added to src.vcxproj + filters
-src/core/engine/cache/      IDataSource + LocalDataSource + RemoteDataSource
-server/                     Node/TS, separate from the MSVC solution
+src/net/                    host transport + protocol (WinHTTP websocket)
+src/net/protocol.hpp        wire format, shared with the Go viewer
+src/net/camera.hpp          matrix construction, mirrored in Go
+src/net/publisher.*         host publishing thread
+server/                     Node/TS relay (host + viewer fan-out)
+viewer/                     Go viewer, cross-built for macOS + Windows (phase 5)
+tests/                      protocol + camera tests, golden frame
 docs/REMOTE_ESP_PLAN.md     this file
 ```
 
-* `src.vcxproj`: add `net\protocol.hpp`, `net\ws_client.cpp`,
-  `net\publisher.cpp`, `net\remote_source.cpp`; `ws2_32` already linked,
-  libcurl already linked.
-* `scripts/build.bat`: add the new `.cpp` files to `SRCS`.
-* `main.cpp`: `--mode=local|host|viewer` (default `local`, so nothing changes
-  for existing users).
+* `src.vcxproj`: `net\ws_client.cpp` and `net\publisher.cpp` added;
+  `winhttp.lib` is linked via `#pragma comment`.
+* `scripts/build.bat`: the new `.cpp` files are in `SRCS`.
+* `main.cpp`: `--mode=local|host` (default `local`), plus
+  `--net-selftest[=SECONDS]` to publish synthetic frames without the game.
 * CI: a second workflow builds `server/` (`npm ci && tsc`) — no MSVC needed.
 
 ## 12. Milestones
 
-| # | Deliverable | Acceptance | Est. |
-|---|-------------|------------|------|
-| 0 | Spike: C++ ws client ↔ Node relay echo | round-trips 1 KB binary, `wss` with Schannel | 0.5 d |
-| 1 | `protocol.hpp` + serializer + golden-vector tests | serialize→deserialize→serialize is byte-identical | 1–2 d |
-| 2 | Camera matrix + calibration harness | matches `host_view_matrix` < 1e-3, head lands on crosshair | 1–2 d |
-| 3 | Node relay: rooms, auth, fan-out, limits | 1 host + 4 viewers, 30 Hz, no queue growth | 1–2 d |
-| 4 | Host publisher thread + `--mode=host` | 10 min session, no frame drops on engine thread | 1 d |
-| 5 | Viewer `RemoteDataSource` + `--mode=viewer` | ESP renders in viewer's own window, no `cs2.exe` handle | 2–3 d |
-| 6 | Remote tab, identity pick, config, status | restart restores room + identity | 1 d |
-| 7 | Interpolation, reconnect, stale handling | 60 fps smooth at 30 Hz, survives relay restart | 1–2 d |
-| 8 | Hardening, deploy docs, CI | fuzz-ish malformed frames do not crash viewer | 1–2 d |
+| # | Deliverable | Acceptance | Est. | Status |
+|---|-------------|------------|------|--------|
+| 0 | Spike: C++ ws client ↔ Node relay echo | round-trips 1 KB binary, `wss` with Schannel | 0.5 d | done (WinHTTP) |
+| 1 | `protocol.hpp` + serializer + golden-vector tests | serialize→deserialize→serialize is byte-identical | 1–2 d | done |
+| 2 | Camera matrix + calibration harness | matches `host_view_matrix` < 1e-3, head lands on crosshair | 1–2 d | done (live check pending) |
+| 3 | Node relay: rooms, auth, fan-out, limits | 1 host + 4 viewers, 30 Hz, no queue growth | 1–2 d | done (7 tests) |
+| 4 | Host publisher thread + `--mode=host` | 10 min session, no frame drops on engine thread | 1 d | done |
+| 5 | **Go viewer** + `--mode=viewer` equivalent | ESP renders in viewer's own window, no `cs2.exe` handle | 2–3 d | not started |
+| 6 | Remote tab, identity pick, config, status | restart restores room + identity | 1 d | not started |
+| 7 | Interpolation, reconnect, stale handling | 60 fps smooth at 30 Hz, survives relay restart | 1–2 d | not started |
+| 8 | Hardening, deploy docs, CI | fuzz-ish malformed frames do not crash viewer | 1–2 d | not started |
+
+Phase 5 is a **separate Go program** (`viewer/`), cross-compiled for macOS
+and Windows, so the C++ binary stays Windows-only and the viewer can run
+anywhere.
 
 Total ≈ 10–14 dev days. Phases 2 and 5 are the schedule risks.
 
