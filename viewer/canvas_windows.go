@@ -679,6 +679,8 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 
 	start := time.Now()
 	lastLog := time.Now()
+	lastStatus := time.Now()
+	lastStatusText := ""
 
 	for {
 		if ctx.Err() != nil || overlayQuit.Load() {
@@ -736,6 +738,16 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 					}
 				}
 			}
+		}
+
+		if relay != nil && !started && time.Since(lastStatus) > 500*time.Millisecond {
+			lastStatus = time.Now()
+			text := StatusText(relay.Snapshot(), len(cw.playerIndices))
+			if text != lastStatusText {
+				lastStatusText = text
+				fmt.Printf("status: %s\n", text)
+			}
+			cw.SetStatus(text)
 		}
 
 		if o.pick >= 0 && relay != nil && !started && len(cw.playerIndices) > 0 {

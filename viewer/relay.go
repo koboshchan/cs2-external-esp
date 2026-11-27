@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -192,6 +193,23 @@ func (r *Relay) setError(text string) {
 	r.lastErr = text
 	r.status.Message = text
 	r.mu.Unlock()
+}
+
+// StatusText describes the connection in plain words, for the launcher.
+func StatusText(s RelaySnapshot, players int) string {
+	if s.Status.Message != "" && !s.Status.Connected {
+		return "relay: " + s.Status.Message
+	}
+	if !s.Status.Connected {
+		return "connecting to relay..."
+	}
+	if !s.Status.HostOnline {
+		return "relay ok - host offline (press Host in the ESP)"
+	}
+	if s.Frames == 0 {
+		return "host online - waiting for the first frame..."
+	}
+	return fmt.Sprintf("host online - %d frames - %d players", s.Frames, players)
 }
 
 type RelaySnapshot struct {

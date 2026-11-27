@@ -226,18 +226,26 @@ func projectionStats(f *Frame, o options) (projected, visible int, maxCameraErro
 		}
 	}
 
-	// Calibration: rebuild the host's matrix from its camera block.
-	if host := f.PlayerByIndex(int(f.Camera.HostIndex)); host != nil && f.Camera.HostFov > 1 {
-		built := BuildViewMatrix(f.Camera.HostEyePos, f.Camera.HostEyeAngles, f.Camera.HostFov, aspect, f.Camera.FovMode)
-		for _, row := range [3][2]int{{0, 3}, {4, 7}, {12, 15}} {
-			for i := row[0]; i <= row[1]; i++ {
-				d := built[i] - f.Camera.ViewMatrix[i]
-				if d < 0 {
-					d = -d
-				}
-				if d > maxCameraError {
-					maxCameraError = d
-				}
+	// Calibration: rebuild the host's matrix from its camera block. The host's
+	// own aspect ratio comes from its matrix, not from our window. A zeroed
+	// matrix (host between rounds) carries no information, so skip it.
+	if host := f.PlayerByIndex(int(f.Camera.HostIndex)); host != nil && f.Camera.HostFov > 1 && MatrixXScale(f.Camera.ViewMatrix) > 0.01 {
+		hostAspect := aspect
+		if ys := MatrixYScale(f.Camera.ViewMatrix); ys > 0 {
+			hostAspect = ys / MatrixXScale(f.Camera.ViewMatrix)
+		}
+
+		built := BuildViewMatrix(f.Camera.HostEyePos, f.Camera.HostEyeAngles, f.Camera.HostFov, hostAspect, f.Camera.FovMode)
+		// Compare the projection basis only (right/up/forward scales and
+		// directions). Translation carries view bob and punch, which are
+		// expected to differ slightly from the pawn-derived eye position.
+		for _, i := range []int{0, 1, 2, 4, 5, 6, 12, 13, 14} {
+			d := built[i] - f.Camera.ViewMatrix[i]
+			if d < 0 {
+				d = -d
+			}
+			if d > maxCameraError {
+				maxCameraError = d
 			}
 		}
 	}

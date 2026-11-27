@@ -214,6 +214,8 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 
 	start := time.Now()
 	lastLog := time.Now()
+	lastStatus := time.Now()
+	lastStatusText := ""
 
 	for {
 		if ctx.Err() != nil {
@@ -297,6 +299,16 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 			started = true
 			C.ov_launcher_hide()
 			C.ov_overlay_show()
+		}
+
+		if relay != nil && !started && time.Since(lastStatus) > 500*time.Millisecond {
+			lastStatus = time.Now()
+			text := StatusText(relay.Snapshot(), len(players))
+			if text != lastStatusText {
+				lastStatusText = text
+				fmt.Printf("status: %s\n", text)
+			}
+			launcherStatus(text)
 		}
 
 		if o.uiTest && !started && len(players) > 0 {
