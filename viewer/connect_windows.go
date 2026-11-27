@@ -439,6 +439,12 @@ func (c *connectWindow) RefreshWindows() {
 	pSendMessageW.Call(c.windowList, lbResetContent, 0, 0)
 	c.windowHandles = c.windowHandles[:0]
 
+	// First entry: the whole screen. Handle 0 means "not bound to a window".
+	if ptr, err := windows.UTF16PtrFromString("Entire screen (full screen)"); err == nil {
+		pSendMessageW.Call(c.windowList, lbAddString, 0, uintptr(unsafe.Pointer(ptr)))
+		c.windowHandles = append(c.windowHandles, 0)
+	}
+
 	for _, entry := range enumWindows {
 		ptr, err := windows.UTF16PtrFromString(entry.title)
 		if err != nil {
@@ -450,11 +456,15 @@ func (c *connectWindow) RefreshWindows() {
 
 	if int(selected) >= 0 && int(selected) < len(c.windowHandles) {
 		pSendMessageW.Call(c.windowList, lbSetCurSel, selected, 0)
+	} else if len(c.windowHandles) > 0 {
+		// Default to "Entire screen".
+		pSendMessageW.Call(c.windowList, lbSetCurSel, 0, 0)
 	}
 }
 
-// Selection returns the chosen player index (-1 when none) and window handle.
-func (c *connectWindow) Selection() (int8, uintptr) {
+// Selection returns the chosen player index (-1 when none), the window handle
+// (0 means the whole screen) and whether a window entry is selected at all.
+func (c *connectWindow) Selection() (int8, uintptr, bool) {
 	player, _, _ := pSendMessageW.Call(c.playerList, lbGetCurSel, 0, 0)
 	window, _, _ := pSendMessageW.Call(c.windowList, lbGetCurSel, 0, 0)
 
@@ -463,12 +473,13 @@ func (c *connectWindow) Selection() (int8, uintptr) {
 		index = c.playerIndices[player]
 	}
 
+	hasWindow := int(window) >= 0 && int(window) < len(c.windowHandles)
 	var hwnd uintptr
-	if int(window) >= 0 && int(window) < len(c.windowHandles) {
+	if hasWindow {
 		hwnd = c.windowHandles[window]
 	}
 
-	return index, hwnd
+	return index, hwnd, hasWindow
 }
 
 func (c *connectWindow) Pump() {

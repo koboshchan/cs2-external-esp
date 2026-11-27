@@ -96,6 +96,10 @@ const (
 
 	smCxScreen = 0
 	smCyScreen = 1
+	smXVirtualScreen = 76
+	smYVirtualScreen = 77
+	smCxVirtualScreen = 78
+	smCyVirtualScreen = 79
 
 	vkF8  = 0x77
 	vkEnd = 0x23
@@ -177,6 +181,8 @@ type overlayCanvas struct {
 	height  int32
 	screenW int32
 	screenH int32
+	screenX int32
+	screenY int32
 
 	dirtyMinX, dirtyMinY int32
 	dirtyMaxX, dirtyMaxY int32
@@ -203,8 +209,13 @@ func newOverlayCanvas(o options) (*overlayCanvas, error) {
 
 	c := &overlayCanvas{}
 
-	sw, _, _ := pGetSystemMetrics.Call(smCxScreen)
-	sh, _, _ := pGetSystemMetrics.Call(smCyScreen)
+	// Virtual screen: covers every monitor, so "full screen" and windows on a
+	// secondary display both fit in the bitmap.
+	vx, _, _ := pGetSystemMetrics.Call(smXVirtualScreen)
+	vy, _, _ := pGetSystemMetrics.Call(smYVirtualScreen)
+	sw, _, _ := pGetSystemMetrics.Call(smCxVirtualScreen)
+	sh, _, _ := pGetSystemMetrics.Call(smCyVirtualScreen)
+	c.screenX, c.screenY = int32(vx), int32(vy)
 	c.screenW, c.screenH = int32(sw), int32(sh)
 	if c.screenW <= 0 || c.screenH <= 0 {
 		return nil, fmt.Errorf("could not read the screen size")
@@ -600,6 +611,11 @@ func (c *overlayCanvas) gameRect() rect {
 		return *c.forced
 	}
 
+	// bind == 0 means "entire screen".
+	if c.bind == 0 {
+		return rect{c.screenX, c.screenY, c.screenX + c.screenW, c.screenY + c.screenH}
+	}
+
 	if c.bind != 0 {
 		if ok, _, _ := pIsWindow.Call(c.bind); ok != 0 {
 			if r, valid := clientScreenRect(c.bind); valid {
@@ -614,7 +630,7 @@ func (c *overlayCanvas) gameRect() rect {
 		}
 	}
 
-	return rect{0, 0, c.screenW, c.screenH}
+	return rect{c.screenX, c.screenY, c.screenX + c.screenW, c.screenY + c.screenH}
 }
 
 func findGameWindow() uintptr {
@@ -757,8 +773,8 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 		}
 
 		if cw.TakeStart() {
-			index, hwnd := cw.Selection()
-			if hwnd == 0 {
+			index, hwnd, hasWindow := cw.Selection()
+			if !hasWindow {
 				cw.SetStatus("Pick the window the overlay should attach to.")
 			} else if relay == nil {
 				cw.SetStatus("Connect first.")
@@ -768,6 +784,7 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 				if canvas == nil {
 					c, err := newOverlayCanvas(o)
 					if err != nil {
+						fmt.Printf("overlay error: %v\n", err)
 						cw.SetStatus("Could not create the overlay: " + err.Error())
 						return relay, nil
 					}
@@ -795,7 +812,7 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 		}
 
 		// The bound window can close while we are attached.
-		if started && canvas != nil {
+		if started && canvas != nil && canvas.BoundWindow() != 0 {
 			if ok, _, _ := pIsWindow.Call(canvas.BoundWindow()); ok == 0 {
 				started = false
 				canvas.Hide()
