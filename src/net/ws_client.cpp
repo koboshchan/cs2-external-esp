@@ -253,7 +253,7 @@ namespace net
 		for (;;)
 		{
 			DWORD received = 0;
-			WINHTTP_WEB_SOCKET_BUFFER_TYPE type = WINHTTP_WEB_SOCKET_UNKNOWN_BUFFER_TYPE;
+			WINHTTP_WEB_SOCKET_BUFFER_TYPE type = WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE;
 
 			const DWORD error = WinHttpWebSocketReceive(
 				static_cast<HINTERNET>(websocket_),
@@ -279,7 +279,10 @@ namespace net
 				return;
 			}
 
-			if (type == WINHTTP_WEB_SOCKET_UNKNOWN_BUFFER_TYPE)
+			if (type != WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE &&
+				type != WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE &&
+				type != WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE &&
+				type != WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE)
 				return;
 
 			if (received == 0)
