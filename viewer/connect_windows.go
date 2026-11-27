@@ -45,6 +45,10 @@ const (
 	idGo     = 104
 	idStatus = 105
 
+	idPasteServer = 106
+	idPasteRoom   = 107
+	idPasteKey    = 108
+
 	hotkeyShowConnect = 3
 
 	vkF9 = 0x78
@@ -56,7 +60,12 @@ var (
 	pSetFocus       = user32.NewProc("SetFocus")
 	pGetStockObject = gdi32.NewProc("GetStockObject")
 	pSendMessageW   = user32.NewProc("SendMessageW")
-	pGetDlgCtrlID   = user32.NewProc("GetDlgCtrlID")
+
+	pOpenClipboard    = user32.NewProc("OpenClipboard")
+	pCloseClipboard   = user32.NewProc("CloseClipboard")
+	pGetClipboardData = user32.NewProc("GetClipboardData")
+	pGlobalLock       = kernel32.NewProc("GlobalLock")
+	pGlobalUnlock     = kernel32.NewProc("GlobalUnlock")
 
 	overlayShowConnect atomic.Bool
 )
@@ -88,9 +97,22 @@ func connectWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 	case wmCommand:
 		id := int(wParam & 0xffff)
 		code := int((wParam >> 16) & 0xffff)
-		if id == idGo && code == bnClicked && gConnect != nil {
+		if gConnect == nil {
+			return 0
+		}
+		if code != bnClicked {
+			return 0
+		}
+		switch id {
+		case idGo:
 			gConnect.readValues()
 			gConnect.connectRequested.Store(true)
+		case idPasteServer:
+			gConnect.setField(gConnect.server, clipboardText())
+		case idPasteRoom:
+			gConnect.setField(gConnect.room, clipboardText())
+		case idPasteKey:
+			gConnect.setField(gConnect.key, clipboardText())
 		}
 		return 0
 
@@ -156,28 +178,20 @@ func newConnectWindow(o options) (*connectWindow, error) {
 	gConnect = cw
 
 	cw.label("Server", 16, 20)
-	cw.server = cw.edit(idServer, 110, 16, 350, o.server)
+	cw.server = cw.edit(idServer, 110, 16, 290, o.server)
+	cw.button("Paste", idPasteServer, 406, 16, 62, 26)
 
 	cw.label("Room code", 16, 58)
 	cw.room = cw.edit(idRoom, 110, 54, 160, o.room)
+	cw.button("Paste", idPasteRoom, 276, 54, 62, 26)
 
 	cw.label("Viewer key", 16, 96)
-	cw.key = cw.edit(idKey, 110, 92, 350, o.key)
+	cw.key = cw.edit(idKey, 110, 92, 290, o.key)
+	cw.button("Paste", idPasteKey, 406, 92, 62, 26)
 
-	cw.status = cw.text(idStatus, 110, 168, 350, "Enter the room code and viewer key from the host.")
+	cw.status = cw.text(idStatus, 110, 168, 360, "Enter the room code and viewer key from the host.")
 
-	button, _ := windows.UTF16PtrFromString("BUTTON")
-	label, _ := windows.UTF16PtrFromString("Connect")
-	btn, _, _ := pCreateWindowExW.Call(0,
-		uintptr(unsafe.Pointer(button)),
-		uintptr(unsafe.Pointer(label)),
-		wsChild|wsVisible|wsTabStop,
-		110, 128, 130, 30,
-		hwnd, uintptr(idGo), uintptr(instance), 0)
-	if btn != 0 {
-		font, _, _ := pGetStockObject.Call(defaultGUIFont)
-		pSendMessageW.Call(btn, wmSetFont, font, 1)
-	}
+	cw.button("Connect", idGo, 110, 128, 130, 30)
 
 	pRegisterHotKey.Call(hwnd, hotkeyNextPlayer, 0, vkF8)
 	pRegisterHotKey.Call(hwnd, hotkeyShowConnect, 0, vkF9)
@@ -187,6 +201,35 @@ func newConnectWindow(o options) (*connectWindow, error) {
 	pSetFocus.Call(cw.room)
 
 	return cw, nil
+}
+
+func (c *connectWindow) button(text string, id int, x, y, w, h int32) uintptr {
+	cls, _ := windows.UTF16PtrFromString("BUTTON")
+	val, _ := windows.UTF16FromString(text)
+
+	handle, _, _ := pCreateWindowExW.Call(0,
+		uintptr(unsafe.Pointer(cls)),
+		uintptr(unsafe.Pointer(&val[0])),
+		wsChild|wsVisible|wsTabStop,
+		uintptr(x), uintptr(y), uintptr(w), uintptr(h),
+		c.hwnd, uintptr(id), 0, 0)
+
+	if handle != 0 {
+		font, _, _ := pGetStockObject.Call(defaultGUIFont)
+		pSendMessageW.Call(handle, wmSetFont, font, 1)
+	}
+	return handle
+}
+
+func (c *connectWindow) setField(hwnd uintptr, text string) {
+	if hwnd == 0 || text == "" {
+		return
+	}
+	ptr, err := windows.UTF16PtrFromString(text)
+	if err != nil {
+		return
+	}
+	pSetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(ptr)))
 }
 
 func (c *connectWindow) label(text string, x, y int32) {
@@ -283,6 +326,44 @@ func (c *connectWindow) Hide() {
 }
 
 func (c *connectWindow) Visible() bool { return c.visible }
+
+func clipboardText() string {
+	ok, _, _ := pOpenClipboard.Call(0)
+	if ok == 0 {
+		return ""
+	}
+	defer pCloseClipboard.Call()
+
+	const cfUnicodeText = 13
+
+	handle, _, _ := pGetClipboardData.Call(cfUnicodeText)
+	if handle == 0 {
+		return ""
+	}
+
+	ptr, _, _ := pGlobalLock.Call(handle)
+	if ptr == 0 {
+		return ""
+	}
+	defer pGlobalUnlock.Call(handle)
+
+	// The handle is locked for the duration, so the pointer stays valid.
+	// UTF-16 until the terminator, capped so a huge clipboard cannot stall us.
+	const maxChars = 4096
+	n := 0
+	for n < maxChars {
+		if *(*uint16)(unsafe.Pointer(ptr + uintptr(n*2))) == 0 {
+			break
+		}
+		n++
+	}
+	if n == 0 {
+		return ""
+	}
+
+	runes := unsafe.Slice((*uint16)(unsafe.Pointer(ptr)), n)
+	return strings.TrimSpace(windows.UTF16ToString(runes))
+}
 
 func (c *connectWindow) Close() {
 	if c.hwnd == 0 {

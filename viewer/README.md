@@ -14,8 +14,9 @@ is the viewer.
 ## Run
 
 Just start it. The first launch shows a connect window: paste the **room code**
-and **viewer key** from the host's Host tab and press Connect. Settings are
-saved, so the next launch connects straight away.
+and **viewer key** from the host's Host tab and press Connect. Each field has a
+**Paste** button (and `Ctrl+V` works too). Settings are saved, so the next
+launch connects straight away.
 
 On Windows `F9` reopens the connect window (to change room), `END` quits.
 The overlay itself is click-through, which is why the connect window exists.
