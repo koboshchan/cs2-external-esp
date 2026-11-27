@@ -119,8 +119,9 @@ namespace net
 			return false;
 		}
 
-		BOOL upgrade = TRUE;
-		if (!WinHttpSetOption(request_, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, &upgrade, sizeof(upgrade)))
+		// This option takes no parameters (NULL, 0); passing a BOOL buffer
+		// makes WinHttpSetOption fail with ERROR_INVALID_PARAMETER.
+		if (!WinHttpSetOption(request_, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0))
 		{
 			if (error) *error = "WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET failed (" + std::to_string(GetLastError()) + ")";
 			Close();
