@@ -74,43 +74,13 @@ bool Dumper::InitImpl() {
     offsets::weaponC4 = temp - client.base;
     LOGF(VERBOSE, "Found 'weaponC4 carrier' offset at 0x{:X}", offsets::weaponC4);
 
-    // View Angles - Try direct offset from cs2-dumper
-    // Build 14139: dwViewAngles = 36804168 decimal = 0x2319648 hex (FIXED!)
-    const uintptr_t dwViewAngles_offset = 0x2319648; 
-    
-    // METHOD 1: Try direct offset (cs2-dumper gives absolute offset in client.dll)
-    offsets::viewAngles = dwViewAngles_offset;
-    LOGF(INFO, "[Method 1] Using direct ViewAngles offset: 0x{:X}", offsets::viewAngles);
-    
-    // METHOD 2: Try pointer dereference method (CS2_External style) as fallback
-    DWORD64 viewangle_ptr = process->read<DWORD64>(client.base + dwViewAngles_offset);
-    LOGF(INFO, "[Method 2] ViewAngles pointer read result: 0x{:X}", viewangle_ptr);
-    
-    if (viewangle_ptr != 0) {
-        uintptr_t calculated_offset = (viewangle_ptr + 0x6140) - client.base;
-        LOGF(INFO, "[Method 2] Calculated ViewAngles RVA: 0x{:X}", calculated_offset);
-        // Use pointer method if it gives a reasonable value
-        if (calculated_offset > 0 && calculated_offset < 0x10000000) {
-            offsets::viewAngles = calculated_offset;
-            LOGF(INFO, "[Method 2] Using pointer-based offset");
-        }
-    }
-
-    // Local Player Pawn
-    offsets::localPlayerPawn = 0x2067B60;
-    LOGF(VERBOSE, "Using 'localPlayerPawn' offset: 0x{:X}", offsets::localPlayerPawn);
-
-    // ForceJump - For bunnyhopping
-    // Try signature scan first
-    if (!(temp = Scan(offsets::signatures::forceJump, client))) {
-        // Fallback to hardcoded offset from buttons.json (Build 14139)
-        // This is the "jump" button address
-        offsets::forceJump = 0x2061E00;
-        LOGF(INFO, "Using hardcoded 'forceJump' offset: 0x{:X}", offsets::forceJump);
-    } else {
-        offsets::forceJump = temp - client.base + 0x30;
-        LOGF(INFO, "Found 'forceJump' offset via signature: 0x{:X}", offsets::forceJump);
-    }
+    // View Angles, Local Player Pawn and ForceJump
+    // These change every game update, so they are refreshed from cs2-dumper at
+    // startup (Dumper::FetchOffsetsFromCS2Dumper). The built-in values in
+    // Offsets.hpp are the fallback when the network request fails.
+    LOGF(VERBOSE, "Using built-in 'viewAngles' offset: 0x{:X}", offsets::viewAngles);
+    LOGF(VERBOSE, "Using built-in 'localPlayerPawn' offset: 0x{:X}", offsets::localPlayerPawn);
+    LOGF(VERBOSE, "Using built-in 'forceJump' offset: 0x{:X}", offsets::forceJump);
 
     // engine2.dll
 
