@@ -66,6 +66,7 @@ type options struct {
 	meIndex  int
 	seconds  int
 	rect     string
+	autostart bool
 }
 
 func parseFlags() options {
@@ -78,6 +79,7 @@ func parseFlags() options {
 	flag.IntVar(&o.meIndex, "me-index", -1, "your player index (fallback when ids are hidden)")
 	flag.IntVar(&o.seconds, "seconds", 0, "quit after N seconds (0 = run until ESC)")
 	flag.StringVar(&o.rect, "rect", "", "overlay rect as x,y,w,h (default: the CS2 window)")
+	flag.BoolVar(&o.autostart, "autostart", false, "skip the launcher and bind to the CS2 window as soon as frames arrive")
 	flag.Parse()
 
 	return o

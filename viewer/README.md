@@ -11,12 +11,31 @@ normal window (CS2 does not run there; that build is for previewing).
 The host is the C++ application (`cs2-external-esp.exe`, Host tab). This binary
 is the viewer.
 
-## Run
+## Run (Windows)
 
-Just start it. The first launch shows a connect window: paste the **room code**
-and **viewer key** from the host's Host tab and press Connect. Each field has a
-**Paste** button on Windows (`Ctrl+V` also works); on macOS use `Cmd+V`.
-Settings are saved, so the next launch connects straight away.
+Start it with no arguments. A launcher window opens:
+
+1. **Server / Room code / Viewer key** — paste the two values from the host's
+   Host tab (each field has a **Paste** button; `Ctrl+V` works too).
+2. **Connect**.
+3. **You are** — pick your own player from the live list.
+4. **Overlay window** — pick the window to attach to (press **Refresh** if the
+   game is not listed).
+5. **Start overlay**.
+
+The overlay is click-through, always on top, and follows that window's client
+area. `F9` returns to the launcher, `F8` cycles players, `END` quits.
+
+Settings are saved, so later launches only need Connect → player → window →
+Start.
+
+> The game must be in **Fullscreen Windowed** (borderless). Exclusive
+> fullscreen cannot be overlaid.
+
+## Run (macOS)
+
+The macOS build is a window, not an overlay (CS2 does not run on macOS). It
+opens a connect form: server, room, viewer key, then `TAB` cycles players.
 
 On Windows `F9` reopens the connect window (to change room), `END` quits.
 The overlay itself is click-through, which is why the connect window exists.

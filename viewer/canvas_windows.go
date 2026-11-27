@@ -44,6 +44,7 @@ var (
 	pSetWindowPos            = user32.NewProc("SetWindowPos")
 	pShowWindow              = user32.NewProc("ShowWindow")
 	pGetSystemMetrics        = user32.NewProc("GetSystemMetrics")
+	pGetDesktopWindow        = user32.NewProc("GetDesktopWindow")
 	pRegisterHotKey          = user32.NewProc("RegisterHotKey")
 	pUnregisterHotKey        = user32.NewProc("UnregisterHotKey")
 	pSetProcessDPIAware      = user32.NewProc("SetProcessDPIAware")
@@ -183,6 +184,7 @@ type overlayCanvas struct {
 	target  rect
 	lastSet rect
 	forced  *rect
+	bind    uintptr
 }
 
 func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
@@ -567,23 +569,48 @@ func (c *overlayCanvas) pump() {
 	}
 }
 
+func (c *overlayCanvas) Bind(hwnd uintptr) {
+	c.bind = hwnd
+}
+
+func (c *overlayCanvas) BoundWindow() uintptr { return c.bind }
+
+func clientScreenRect(hwnd uintptr) (rect, bool) {
+	var cr rect
+	if r, _, _ := pGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&cr))); r == 0 {
+		return rect{}, false
+	}
+
+	pt := point{0, 0}
+	if ok, _, _ := pClientToScreen.Call(hwnd, uintptr(unsafe.Pointer(&pt))); ok == 0 {
+		return rect{}, false
+	}
+
+	w := cr.right - cr.left
+	h := cr.bottom - cr.top
+	if w <= 0 || h <= 0 {
+		return rect{}, false
+	}
+
+	return rect{pt.x, pt.y, pt.x + w, pt.y + h}, true
+}
+
 func (c *overlayCanvas) gameRect() rect {
 	if c.forced != nil {
 		return *c.forced
 	}
 
-	hwnd := findGameWindow()
-	if hwnd != 0 {
-		var cr rect
-		if r, _, _ := pGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&cr))); r != 0 {
-			pt := point{0, 0}
-			if ok, _, _ := pClientToScreen.Call(hwnd, uintptr(unsafe.Pointer(&pt))); ok != 0 {
-				w := cr.right - cr.left
-				h := cr.bottom - cr.top
-				if w > 0 && h > 0 {
-					return rect{pt.x, pt.y, pt.x + w, pt.y + h}
-				}
+	if c.bind != 0 {
+		if ok, _, _ := pIsWindow.Call(c.bind); ok != 0 {
+			if r, valid := clientScreenRect(c.bind); valid {
+				return r
 			}
+		}
+	}
+
+	if hwnd := findGameWindow(); hwnd != 0 {
+		if r, valid := clientScreenRect(hwnd); valid {
+			return r
 		}
 	}
 
@@ -611,10 +638,11 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 	}
 
 	var (
-		relay  *Relay
-		cancel context.CancelFunc
-		canvas *overlayCanvas
-		sc     *scene
+		relay   *Relay
+		cancel  context.CancelFunc
+		canvas  *overlayCanvas
+		sc      *scene
+		started bool
 	)
 
 	defer func() {
@@ -627,7 +655,7 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 		cw.Close()
 	}()
 
-	connect := func(server, room, key string) error {
+	startHost := func(server, room, key string) error {
 		o.server = resolveServerURL(server)
 		o.room = room
 		o.key = key
@@ -638,24 +666,15 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 		}
 		relay, cancel = startRelay(ctx, o)
 
-		if canvas == nil {
-			c, err := newOverlayCanvas(o)
-			if err != nil {
-				return err
-			}
-			canvas = c
-		}
-		sc = newScene(relay, o)
-
-		cw.Hide()
-		canvas.Show()
+		cw.RefreshWindows()
+		cw.SetStatus("Connected. Pick your player and the window to overlay.")
 		return nil
 	}
 
+	// Saved credentials connect right away; the launcher still lets you pick
+	// the player and the window.
 	if o.room != "" && o.key != "" {
-		if err := connect(o.server, o.room, o.key); err != nil {
-			return nil, err
-		}
+		_ = startHost(o.server, o.room, o.key)
 	}
 
 	start := time.Now()
@@ -675,19 +694,99 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 			server, room, key := cw.Values()
 			if room == "" || key == "" {
 				cw.SetStatus("Room code and viewer key are required.")
-			} else if err := connect(server, room, key); err != nil {
-				cw.SetStatus("Could not start the overlay: " + err.Error())
+			} else if err := startHost(server, room, key); err != nil {
+				cw.SetStatus("Connect failed: " + err.Error())
+			}
+		}
+
+		if relay != nil && !started {
+			cw.RefreshPlayers(relay)
+		}
+
+		if o.autostart && !started && relay != nil {
+			snap := relay.Snapshot()
+			if snap.Frame != nil && len(snap.Frame.Players) > 0 {
+				hwnd := findGameWindow()
+				if hwnd == 0 {
+					cw.RefreshWindows()
+					if len(cw.windowHandles) > 0 {
+						hwnd = cw.windowHandles[0]
+					}
+				}
+				if hwnd == 0 {
+					// Nothing enumerable (e.g. a service session): use the desktop.
+					hwnd, _, _ = pGetDesktopWindow.Call()
+				}
+				if hwnd != 0 {
+					index := snap.Frame.Players[0].Index
+					o.meIndex = int(index)
+
+					if canvas == nil {
+						if c, err := newOverlayCanvas(o); err == nil {
+							canvas = c
+						}
+					}
+					if canvas != nil {
+						canvas.Bind(hwnd)
+						sc = newScene(relay, o)
+						sc.selected = index
+						started = true
+						cw.Hide()
+						canvas.Show()
+					}
+				}
+			}
+		}
+
+		if cw.TakeStart() {
+			index, hwnd := cw.Selection()
+			if hwnd == 0 {
+				cw.SetStatus("Pick the window the overlay should attach to.")
+			} else if relay == nil {
+				cw.SetStatus("Connect first.")
+			} else {
+				o.meIndex = int(index)
+
+				if canvas == nil {
+					c, err := newOverlayCanvas(o)
+					if err != nil {
+						cw.SetStatus("Could not create the overlay: " + err.Error())
+						return relay, nil
+					}
+					canvas = c
+				}
+
+				canvas.Bind(hwnd)
+				sc = newScene(relay, o)
+				sc.selected = index
+
+				started = true
+				cw.Hide()
+				canvas.Show()
 			}
 		}
 
 		if overlayShowConnect.Swap(false) {
-			cw.Show()
+			started = false
 			if canvas != nil {
 				canvas.Hide()
 			}
+			cw.RefreshWindows()
+			cw.Show()
 		}
 
-		if canvas != nil && !cw.Visible() {
+		// The bound window can close while we are attached.
+		if started && canvas != nil {
+			if ok, _, _ := pIsWindow.Call(canvas.BoundWindow()); ok == 0 {
+				started = false
+				canvas.Hide()
+				cw.RefreshWindows()
+				cw.Show()
+				cw.SetStatus("The overlaid window closed.")
+			}
+		}
+
+		if started && canvas != nil && !cw.Visible() {
 			sc.update()
 			sc.draw(canvas)
 			canvas.Present()
