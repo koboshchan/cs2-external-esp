@@ -156,14 +156,15 @@ func runHeadless(ctx context.Context, relay *Relay, o options) {
 	var last RelaySnapshot
 	var projected, visible int
 	var maxCameraError float32
+	var meName string
 
 	for {
 		select {
 		case <-ctx.Done():
-			report(last, projected, visible, maxCameraError)
+			report(last, meName, projected, visible, maxCameraError)
 			return
 		case <-deadline:
-			report(last, projected, visible, maxCameraError)
+			report(last, meName, projected, visible, maxCameraError)
 			return
 		case <-ticker.C:
 			last = relay.Snapshot()
@@ -172,6 +173,9 @@ func runHeadless(ctx context.Context, relay *Relay, o options) {
 				projected, visible = p, v
 				if err > maxCameraError {
 					maxCameraError = err
+				}
+				if me := selectPlayer(last.Frame, o); me != nil {
+					meName = me.Name
 				}
 			}
 			fmt.Printf("connected=%v host=%v frames=%d bytes=%d gaps=%d age=%s\n",
@@ -187,9 +191,9 @@ func ageOf(t time.Time) string {
 	return time.Since(t).Round(time.Millisecond).String()
 }
 
-func report(s RelaySnapshot, projected, visible int, maxErr float32) {
-	fmt.Printf("\nsummary: frames=%d bytes=%d gaps=%d players=%d projected=%d on_screen=%d camera_error=%.6f\n",
-		s.Frames, s.Bytes, s.Gaps, playerCount(s.Frame), projected, visible, maxErr)
+func report(s RelaySnapshot, me string, projected, visible int, maxErr float32) {
+	fmt.Printf("\nsummary: frames=%d bytes=%d gaps=%d players=%d you=%q projected=%d on_screen=%d camera_error=%.6f\n",
+		s.Frames, s.Bytes, s.Gaps, playerCount(s.Frame), me, projected, visible, maxErr)
 }
 
 func playerCount(f *Frame) int {

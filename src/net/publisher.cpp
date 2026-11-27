@@ -224,7 +224,8 @@ namespace net
 			f.camera.index = 0;
 			f.camera.team = 2;
 			f.camera.eye_pos = { 0.f, 0.f, 64.f };
-			f.camera.eye_angles = { 0.f, t * 30.f };
+			// Gentle sweep so the fan of players stays in view.
+			f.camera.eye_angles = { 0.f, std::sin(t * 0.5f) * 15.f };
 			f.camera.fov = 90.f;
 			f.camera.fov_mode = kFovSourceHorPlus;
 			BuildViewMatrix(f.camera.eye_pos, f.camera.eye_angles, f.camera.fov, 16.f / 9.f, f.camera.fov_mode, f.camera.view_matrix);
@@ -246,7 +247,8 @@ namespace net
 				p.name = "selftest" + std::to_string(i);
 				p.weapon_id = 7;
 				p.ammo = 30;
-				p.pos = { std::cos(t + i) * 400.f, std::sin(t + i) * 400.f, 0.f };
+				// Fan in front of the camera: 10 players, ~36 degrees wide.
+				p.pos = { 500.f + float(i % 3) * 120.f, float(i - 4) * 90.f, 0.f };
 				p.vel = { 0.f, 0.f, 0.f };
 				p.eye_angles = { 0.f, 0.f };
 				p.eye_pos = { p.pos.x, p.pos.y, p.pos.z + 64.f };
