@@ -3,6 +3,7 @@ package main
 // Persisted viewer settings, so the connect screen is filled in next launch.
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -35,6 +36,9 @@ func loadConfig() viewerConfig {
 	if err != nil {
 		return c
 	}
+
+	// Notepad and PowerShell like to prepend a BOM.
+	raw = bytes.TrimPrefix(raw, []byte{0xEF, 0xBB, 0xBF})
 
 	_ = json.Unmarshal(raw, &c)
 	return c

@@ -13,15 +13,26 @@ is the viewer.
 
 ## Run
 
-```sh
-# the host shows these in its Host tab
-./cs2-remote-viewer --room ABC234 --key <viewerKey>
+Just start it. The first launch shows a connect window: paste the **room code**
+and **viewer key** from the host's Host tab and press Connect. Settings are
+saved, so the next launch connects straight away.
 
-# your own player (pick one)
-./cs2-remote-viewer --room ABC234 --key ... --me 76561198000000000
-./cs2-remote-viewer --room ABC234 --key ... --me "player name"
-./cs2-remote-viewer --room ABC234 --key ... --me-index 4
+On Windows `F9` reopens the connect window (to change room), `END` quits.
+The overlay itself is click-through, which is why the connect window exists.
+
+Command-line flags are optional, for scripting:
+
+```sh
+./cs2-remote-viewer --room ABC234 --key <viewerKey>          # skip the window
+./cs2-remote-viewer --room ... --key ... --me 76561198000000000
+./cs2-remote-viewer --room ... --key ... --me "player name"
+./cs2-remote-viewer --room ... --key ... --me-index 4
 ```
+
+Saved settings live in:
+
+- Windows: `%APPDATA%\cs2-remote-viewer\config.json`
+- macOS: `~/Library/Application Support/cs2-remote-viewer/config.json`
 
 Controls:
 
