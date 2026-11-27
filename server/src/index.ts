@@ -75,6 +75,7 @@ function onFrame(ws: WebSocket, session: Session, data: Buffer): void {
 
   const prefix = parseFramePrefix(data);
   if (!prefix) {
+    log('frame_rejected', { room: session.room.id, reason: 'prefix', bytes: data.length });
     sendError(ws, ERR.badMessage, 'invalid frame prefix');
     return;
   }

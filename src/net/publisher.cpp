@@ -337,17 +337,7 @@ namespace net
 		Publisher& self = Get();
 		std::string error;
 
-		if (!g_client.Connect(self.url_, &error))
-		{
-			self.last_error_++;
-			{
-				std::lock_guard<std::mutex> lock(self.message_mutex_);
-				self.last_message_ = error;
-			}
-			LOGF(WARNING, "[net] connect failed: {}", error);
-			return false;
-		}
-
+		// Must be installed before Connect: the receive thread starts there.
 		g_client.SetOnMessage([](bool binary, const uint8_t* data, size_t size)
 		{
 			if (binary)
@@ -365,6 +355,17 @@ namespace net
 			}
 		});
 
+		if (!g_client.Connect(self.url_, &error))
+		{
+			self.last_error_++;
+			{
+				std::lock_guard<std::mutex> lock(self.message_mutex_);
+				self.last_message_ = error;
+			}
+			LOGF(WARNING, "[net] connect failed: {}", error);
+			return false;
+		}
+
 		if (!g_client.SendText(BuildHello(self.room_, self.token_)))
 		{
 			self.last_error_++;
@@ -373,7 +374,7 @@ namespace net
 		}
 
 		// Give the relay a moment to accept or reject us.
-		g_client.Poll(500);
+		std::this_thread::sleep_for(std::chrono::milliseconds(150));
 		self.connected_ = g_client.IsConnected();
 
 		if (self.connected_)
@@ -471,6 +472,21 @@ namespace net
 		std::fprintf(stderr, "[net] libcurl runtime: %s\n", WsClient::RuntimeInfo().c_str());
 
 		std::string connect_error;
+
+		g_client.SetOnMessage([](bool binary, const uint8_t* data, size_t size)
+		{
+			if (binary)
+			{
+				std::fprintf(stderr, "[net] self-test received %zu bytes back\n", size);
+				LOGF(INFO, "[net] self-test received {} bytes back", size);
+				return;
+			}
+
+			const std::string text(reinterpret_cast<const char*>(data), size);
+			std::fprintf(stderr, "[net] self-test relay: %s\n", text.c_str());
+			LOGF(INFO, "[net] self-test relay: {}", text);
+		});
+
 		if (!g_client.Connect(url, &connect_error))
 		{
 			std::fprintf(stderr, "[net] self-test connect failed: %s\n", connect_error.c_str());
@@ -478,16 +494,6 @@ namespace net
 			return 2;
 		}
 		std::fprintf(stderr, "[net] self-test connected\n");
-
-		g_client.SetOnMessage([](bool binary, const uint8_t* data, size_t size)
-		{
-			if (binary)
-			{
-				LOGF(INFO, "[net] self-test received {} bytes back", size);
-				return;
-			}
-			LOGF(INFO, "[net] self-test relay: {}", std::string(reinterpret_cast<const char*>(data), size));
-		});
 
 		if (!g_client.SendText(BuildHello(room, token)))
 		{

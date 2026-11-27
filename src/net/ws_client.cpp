@@ -49,6 +49,12 @@ namespace net
 		return "WinHTTP websocket (ws/wss)";
 	}
 
+	void WsClient::SetOnMessage(MessageCallback cb)
+	{
+		// Must be called before Connect: the receive thread starts there.
+		on_message_ = std::move(cb);
+	}
+
 	bool WsClient::Connect(const std::string& url, std::string* error)
 	{
 		Close();
@@ -92,7 +98,7 @@ namespace net
 		}
 
 		// resolve, connect, send, receive (ms)
-		WinHttpSetTimeouts(session_, 5000, 10000, 2000, 50);
+		WinHttpSetTimeouts(session_, 5000, 10000, 2000, 60000);
 
 		connect_ = WinHttpConnect(session_, host.c_str(), uc.nPort, 0);
 		if (!connect_)
@@ -172,15 +178,31 @@ namespace net
 		WinHttpCloseHandle(static_cast<HINTERNET>(request_));
 		request_ = nullptr;
 
+		// Keep shutdown responsive if the peer stops answering.
+		DWORD close_timeout = 1000;
+		WinHttpSetOption(websocket_, WINHTTP_OPTION_WEB_SOCKET_CLOSE_TIMEOUT, &close_timeout, sizeof(close_timeout));
+
 		connected_ = true;
+		stop_ = false;
+		receive_thread_ = std::thread(&WsClient::ReceiveLoop, this);
 		return true;
 	}
 
 	void WsClient::Close()
 	{
+		stop_ = true;
+
+		// Unblocks the pending receive so the thread can exit.
+		if (websocket_)
+			WinHttpWebSocketClose(static_cast<HINTERNET>(websocket_), WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
+
+		if (receive_thread_.joinable())
+			receive_thread_.join();
+
+		connected_ = false;
+
 		if (websocket_)
 		{
-			WinHttpWebSocketClose(static_cast<HINTERNET>(websocket_), WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
 			WinHttpCloseHandle(static_cast<HINTERNET>(websocket_));
 			websocket_ = nullptr;
 		}
@@ -200,7 +222,6 @@ namespace net
 			session_ = nullptr;
 		}
 
-		connected_ = false;
 		rx_.clear();
 	}
 
@@ -220,10 +241,7 @@ namespace net
 			return false;
 
 		if (size > 0xffffffffull)
-		{
-			connected_ = false;
 			return false;
-		}
 
 		const DWORD error = WinHttpWebSocketSend(
 			static_cast<HINTERNET>(websocket_),
@@ -243,81 +261,84 @@ namespace net
 
 	bool WsClient::Poll(int timeout_ms)
 	{
-		(void)timeout_ms; // the receive timeout is configured on the session
-
-		if (!connected_ || !websocket_)
-			return false;
-
-		DrainIncoming();
+		(void)timeout_ms;
 		return connected_;
 	}
 
-	void WsClient::DrainIncoming()
+	void WsClient::ReceiveLoop()
+	{
+		while (!stop_ && connected_)
+		{
+			if (!ReceiveOnce())
+			{
+				connected_ = false;
+				break;
+			}
+		}
+	}
+
+	bool WsClient::ReceiveOnce()
 	{
 		uint8_t buffer[16 * 1024];
 
-		for (;;)
+		DWORD received = 0;
+		WINHTTP_WEB_SOCKET_BUFFER_TYPE type = WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE;
+
+		const DWORD error = WinHttpWebSocketReceive(
+			static_cast<HINTERNET>(websocket_),
+			buffer,
+			DWORD(sizeof(buffer)),
+			&received,
+			&type
+		);
+
+		if (error == ERROR_WINHTTP_TIMEOUT)
+			return true; // idle connection, keep waiting
+
+		if (error != ERROR_SUCCESS)
+			return false;
+
+		if (type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE)
+			return false;
+
+		if (type != WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE &&
+			type != WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE &&
+			type != WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE &&
+			type != WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE)
+			return true;
+
+		if (received == 0)
+			return true;
+
+		const bool fragment =
+			type == WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE ||
+			type == WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE;
+
+		const bool binary =
+			type == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE ||
+			type == WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE;
+
+		if (rx_.empty())
+			rx_binary_ = binary;
+
+		rx_.insert(rx_.end(), buffer, buffer + received);
+
+		if (!fragment)
 		{
-			DWORD received = 0;
-			WINHTTP_WEB_SOCKET_BUFFER_TYPE type = WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE;
-
-			const DWORD error = WinHttpWebSocketReceive(
-				static_cast<HINTERNET>(websocket_),
-				buffer,
-				DWORD(sizeof(buffer)),
-				&received,
-				&type
-			);
-
-			// No data within the receive timeout: normal for a quiet relay.
-			if (error == ERROR_WINHTTP_TIMEOUT)
-				return;
-
-			if (error != ERROR_SUCCESS)
-			{
-				connected_ = false;
-				return;
-			}
-
-			if (type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE)
-			{
-				connected_ = false;
-				return;
-			}
-
-			if (type != WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE &&
-				type != WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE &&
-				type != WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE &&
-				type != WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE)
-				return;
-
-			if (received == 0)
-				continue;
-
-			const bool fragment =
-				type == WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE ||
-				type == WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE;
-
-			if (rx_.empty())
-				rx_binary_ = (type == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE ||
-					type == WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE);
-
-			rx_.insert(rx_.end(), buffer, buffer + received);
-
-			if (!fragment)
-			{
-				if (on_message_ && !rx_.empty())
-					on_message_(rx_binary_, rx_.data(), rx_.size());
-				rx_.clear();
-			}
-
-			// Guard against a peer that never ends a message.
-			if (rx_.size() > 1024 * 1024)
-			{
-				rx_.clear();
-				connected_ = false;
-				return;
-			}
+			Dispatch(rx_.data(), rx_.size(), rx_binary_);
+			rx_.clear();
 		}
+
+		// Guard against a peer that never ends a message.
+		if (rx_.size() > 1024 * 1024)
+			return false;
+
+		return true;
+	}
+
+	void WsClient::Dispatch(const uint8_t* data, size_t size, bool binary)
+	{
+		if (on_message_ && size > 0)
+			on_message_(binary, data, size);
 	}
 }

@@ -6,13 +6,16 @@
 // wss:// (Schannel TLS) without adding a dependency. The vendored libcurl is
 // built without WebSocket support, so it cannot be used for this.
 //
-// Single-threaded by design: one publisher thread owns one WsClient. Receive
-// is polled (with a short timeout) rather than run on its own thread, so the
-// caller controls how long a poll may block.
+// WinHttpWebSocketReceive blocks and WinHTTP does not honour a short receive
+// timeout on the websocket handle, so receiving runs on its own thread while
+// the publisher thread only sends. Control messages (welcome/error) are
+// delivered through the message callback.
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace net
@@ -28,7 +31,7 @@ namespace net
 		WsClient(const WsClient&) = delete;
 		WsClient& operator=(const WsClient&) = delete;
 
-		// Performs the HTTP upgrade and returns once the socket is a websocket.
+		// Performs the HTTP upgrade and starts the receive thread.
 		bool Connect(const std::string& url, std::string* error = nullptr);
 
 		void Close();
@@ -38,25 +41,29 @@ namespace net
 		bool SendText(const std::string& text);
 		bool SendBinary(const void* data, size_t size);
 
-		// Receives at most one chunk (bounded by the receive timeout) and
-		// dispatches complete messages. Returns false when the connection dropped.
+		// Kept for call-site compatibility; receiving happens on its own thread.
 		bool Poll(int timeout_ms);
 
-		void SetOnMessage(MessageCallback cb) { on_message_ = std::move(cb); }
+		void SetOnMessage(MessageCallback cb);
 
 		static std::string RuntimeInfo();
 
 	private:
 		bool SendFrame(const void* data, size_t size, bool text);
-		void DrainIncoming();
+		void ReceiveLoop();
+		bool ReceiveOnce();
+		void Dispatch(const uint8_t* data, size_t size, bool binary);
 
-		void* session_ = nullptr;  // HINTERNET
-		void* connect_ = nullptr;  // HINTERNET
-		void* request_ = nullptr;  // HINTERNET
+		void* session_ = nullptr;   // HINTERNET
+		void* connect_ = nullptr;   // HINTERNET
+		void* request_ = nullptr;   // HINTERNET
 		void* websocket_ = nullptr; // HINTERNET
-		bool connected_ = false;
 
-		// Reassembly buffer for fragmented messages.
+		std::atomic<bool> connected_{ false };
+		std::atomic<bool> stop_{ false };
+		std::thread receive_thread_;
+
+		// Reassembly buffer for fragmented messages (receive thread only).
 		std::vector<uint8_t> rx_;
 		bool rx_binary_ = false;
 
