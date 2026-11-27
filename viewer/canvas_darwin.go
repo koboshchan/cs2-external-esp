@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -78,10 +79,29 @@ type connectForm struct {
 	focus  formField
 }
 
+// clipboardText reads the macOS clipboard. Ebiten has no public clipboard
+// API, and pbpaste is available on every macOS install.
+func clipboardText() string {
+	out, err := exec.Command("pbpaste").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func (f *connectForm) update() bool {
-	for _, r := range ebiten.AppendInputChars(nil) {
-		if r >= 32 && r != 127 {
-			f.values[f.focus] += string(r)
+	paste := inpututil.IsKeyJustPressed(ebiten.KeyV) &&
+		(ebiten.IsKeyPressed(ebiten.KeyMeta) || ebiten.IsKeyPressed(ebiten.KeyControl))
+
+	if paste {
+		if text := clipboardText(); text != "" {
+			f.values[f.focus] += text
+		}
+	} else {
+		for _, r := range ebiten.AppendInputChars(nil) {
+			if r >= 32 && r != 127 {
+				f.values[f.focus] += string(r)
+			}
 		}
 	}
 
@@ -135,7 +155,7 @@ func (f *connectForm) draw(c canvas, w, h float32) {
 		}
 	}
 
-	c.Text(24, 232, "TAB next field    ENTER connect    ESC quit", dim)
+	c.Text(24, 232, "TAB next field    ENTER connect    CMD+V paste    ESC quit", dim)
 
 	if msg := strings.TrimSpace(f.values[fieldRoom]); msg == "" {
 		c.Text(24, 254, "The host shows the room code after pressing Host.", dim)
