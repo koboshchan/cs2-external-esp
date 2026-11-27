@@ -247,8 +247,9 @@ namespace net
 				p.name = "selftest" + std::to_string(i);
 				p.weapon_id = 7;
 				p.ammo = 30;
-				// Fan in front of the camera: 10 players, ~36 degrees wide.
-				p.pos = { 500.f + float(i % 3) * 120.f, float(i - 4) * 90.f, 0.f };
+				// Three columns along +X. A viewer in column 0 sees 6 of the
+				// other 9 players, which makes the projection check stable.
+				p.pos = { 500.f + float(i / 3) * 200.f, float(i % 3 - 1) * 150.f, 0.f };
 				p.vel = { 0.f, 0.f, 0.f };
 				p.eye_angles = { 0.f, 0.f };
 				p.eye_pos = { p.pos.x, p.pos.y, p.pos.z + 64.f };
