@@ -425,6 +425,8 @@ namespace net
 		const auto tick = std::chrono::milliseconds(1000 / (self.rate_hz_ > 0 ? self.rate_hz_ : 30));
 		int backoff_ms = 1000;
 
+		auto last_poll = std::chrono::steady_clock::now();
+
 		while (self.running_)
 		{
 			if (!g_client.IsConnected())
@@ -438,15 +440,20 @@ namespace net
 					continue;
 				}
 				backoff_ms = 1000;
+				last_poll = std::chrono::steady_clock::now();
 			}
-
-			g_client.Poll(0);
 
 			const auto next = std::chrono::steady_clock::now() + tick;
 			self.PublishFrame();
 
-			// Drain control messages between frames.
-			g_client.Poll(1);
+			// Control messages are rare; a receive attempt can block for the
+			// session receive timeout, so do not run it every frame.
+			const auto now = std::chrono::steady_clock::now();
+			if (now - last_poll > std::chrono::milliseconds(500))
+			{
+				g_client.Poll(50);
+				last_poll = now;
+			}
 
 			if (self.running_)
 				std::this_thread::sleep_until(next);
@@ -498,6 +505,7 @@ namespace net
 		uint32_t seq = 0;
 		uint64_t sent = 0;
 		const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
+		auto last_poll = std::chrono::steady_clock::now();
 
 		while (std::chrono::steady_clock::now() < end)
 		{
@@ -513,17 +521,26 @@ namespace net
 			const std::vector<uint8_t> bytes = Serialize(frame);
 			if (!g_client.SendBinary(bytes.data(), bytes.size()))
 			{
+				std::fprintf(stderr, "[net] self-test send failed after %llu frames\n", static_cast<unsigned long long>(sent));
 				LOGF(WARNING, "[net] self-test send failed after {} frames", sent);
 				g_client.Close();
 				return 5;
 			}
 
 			sent++;
-			g_client.Poll(0);
+
+			const auto now = std::chrono::steady_clock::now();
+			if (now - last_poll > std::chrono::milliseconds(500))
+			{
+				g_client.Poll(50);
+				last_poll = now;
+			}
+
 			std::this_thread::sleep_for(std::chrono::milliseconds(33));
 		}
 
 		g_client.Close();
+		std::fprintf(stderr, "[net] self-test sent %llu frames\n", static_cast<unsigned long long>(sent));
 		LOGF(INFO, "[net] self-test sent {} frames", sent);
 		return sent > 0 ? 0 : 6;
 	}

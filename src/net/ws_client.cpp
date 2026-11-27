@@ -1,42 +1,41 @@
 #include "net/ws_client.hpp"
 
-// Must match the rest of the project: the vendored libcurl is a static library,
-// otherwise the compiler expects dllimport stubs (__imp_curl_ws_send).
-#ifndef CURL_STATICLIB
-#define CURL_STATICLIB
-#endif
+#include <windows.h>
+#include <winhttp.h>
 
-#include <curl/curl.h>
-
-#include <chrono>
-#include <cstring>
-
-#ifdef _WIN32
-// <windows.h> is force-included by the project and already provides
-// fd_set/select/FD_* for sockets. Including <winsock2.h> here would conflict.
-#else
-#include <sys/select.h>
-#endif
+#pragma comment(lib, "winhttp.lib")
 
 namespace net
 {
 	namespace
 	{
-		void GlobalInit()
+		std::wstring Widen(const std::string& s)
 		{
-			static const bool once = []
-			{
-				curl_global_init(CURL_GLOBAL_DEFAULT);
-				return true;
-			}();
-			(void)once;
+			if (s.empty())
+				return {};
+
+			const int needed = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), int(s.size()), nullptr, 0);
+			std::wstring out(size_t(needed), L'\0');
+			MultiByteToWideChar(CP_UTF8, 0, s.c_str(), int(s.size()), out.data(), needed);
+			return out;
 		}
 
-		// libcurl hands us one chunk at a time; a message is complete when
-		// bytesleft reaches zero.
-		bool IsFinalChunk(const curl_ws_frame* meta)
+		// WinHttpCrackUrl only understands http/https; ws/wss are the same
+		// scheme with an upgrade.
+		std::string ToHttpScheme(const std::string& url, bool* secure)
 		{
-			return meta && meta->bytesleft == 0;
+			if (url.rfind("wss://", 0) == 0)
+			{
+				if (secure) *secure = true;
+				return "https://" + url.substr(6);
+			}
+			if (url.rfind("ws://", 0) == 0)
+			{
+				if (secure) *secure = false;
+				return "http://" + url.substr(5);
+			}
+			if (secure) *secure = url.rfind("https://", 0) == 0;
+			return url;
 		}
 	}
 
@@ -47,67 +46,125 @@ namespace net
 
 	std::string WsClient::RuntimeInfo()
 	{
-		GlobalInit();
-
-		std::string out = "libcurl ";
-		const curl_version_info_data* info = curl_version_info(CURLVERSION_NOW);
-		if (!info)
-			return out + "(unknown)";
-
-		out += info->version ? info->version : "?";
-		out += " protocols:";
-		for (const char* const* p = info->protocols; p && *p; ++p)
-		{
-			out += ' ';
-			out += *p;
-		}
-		return out;
+		return "WinHTTP websocket (ws/wss)";
 	}
 
 	bool WsClient::Connect(const std::string& url, std::string* error)
 	{
 		Close();
-		GlobalInit();
 
-		easy_ = curl_easy_init();
-		if (!easy_)
+		bool secure = false;
+		const std::wstring wide_url = Widen(ToHttpScheme(url, &secure));
+
+		URL_COMPONENTS uc{};
+		uc.dwStructSize = sizeof(uc);
+		uc.dwSchemeLength = DWORD(-1);
+		uc.dwHostNameLength = DWORD(-1);
+		uc.dwUrlPathLength = DWORD(-1);
+		uc.dwExtraInfoLength = DWORD(-1);
+
+		if (!WinHttpCrackUrl(wide_url.c_str(), DWORD(wide_url.size()), 0, &uc))
 		{
-			if (error) *error = "curl init failed";
+			if (error) *error = "invalid url";
 			return false;
 		}
 
-		curl_easy_setopt(easy_, CURLOPT_URL, url.c_str());
-		curl_easy_setopt(easy_, CURLOPT_CONNECT_ONLY, 2L); // 2 = websocket
-		curl_easy_setopt(easy_, CURLOPT_USERAGENT, "cs2-external-esp-net/1");
-		curl_easy_setopt(easy_, CURLOPT_CONNECTTIMEOUT, 10L);
-		curl_easy_setopt(easy_, CURLOPT_SSL_VERIFYPEER, 1L);
-		curl_easy_setopt(easy_, CURLOPT_SSL_VERIFYHOST, 2L);
-		curl_easy_setopt(easy_, CURLOPT_NOSIGNAL, 1L);
-		curl_easy_setopt(easy_, CURLOPT_TCP_KEEPALIVE, 1L);
+		std::wstring host(uc.lpszHostName, uc.dwHostNameLength);
+		std::wstring path(uc.lpszUrlPath, uc.dwUrlPathLength);
+		if (uc.dwExtraInfoLength)
+			path.append(uc.lpszExtraInfo, uc.dwExtraInfoLength);
+		if (path.empty())
+			path = L"/";
 
-		const CURLcode rc = curl_easy_perform(easy_);
-		if (rc != CURLE_OK)
+		session_ = WinHttpOpen(
+			L"cs2-external-esp-net/1",
+			WINHTTP_ACCESS_TYPE_NO_PROXY,
+			WINHTTP_NO_PROXY_NAME,
+			WINHTTP_NO_PROXY_BYPASS,
+			0
+		);
+
+		if (!session_)
 		{
-			long response = 0;
-			curl_easy_getinfo(easy_, CURLINFO_RESPONSE_CODE, &response);
-			if (error)
-			{
-				*error = std::string(curl_easy_strerror(rc)) +
-					" (curl code " + std::to_string(int(rc)) +
-					", http " + std::to_string(response) + ")";
-			}
+			if (error) *error = "WinHttpOpen failed";
 			Close();
 			return false;
 		}
 
-		long response = 0;
-		curl_easy_getinfo(easy_, CURLINFO_RESPONSE_CODE, &response);
-		if (response != 101)
+		// resolve, connect, send, receive (ms)
+		WinHttpSetTimeouts(session_, 5000, 10000, 2000, 50);
+
+		connect_ = WinHttpConnect(session_, host.c_str(), uc.nPort, 0);
+		if (!connect_)
 		{
-			if (error) *error = "handshake failed (HTTP " + std::to_string(response) + ")";
+			if (error) *error = "WinHttpConnect failed";
 			Close();
 			return false;
 		}
+
+		request_ = WinHttpOpenRequest(
+			connect_,
+			L"GET",
+			path.c_str(),
+			nullptr,
+			WINHTTP_NO_REFERER,
+			WINHTTP_DEFAULT_ACCEPT_TYPES,
+			secure ? WINHTTP_FLAG_SECURE : 0
+		);
+
+		if (!request_)
+		{
+			if (error) *error = "WinHttpOpenRequest failed";
+			Close();
+			return false;
+		}
+
+		BOOL upgrade = TRUE;
+		WinHttpSetOption(request_, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, &upgrade, sizeof(upgrade));
+
+		if (!WinHttpSendRequest(request_, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0))
+		{
+			if (error) *error = "WinHttpSendRequest failed (" + std::to_string(GetLastError()) + ")";
+			Close();
+			return false;
+		}
+
+		if (!WinHttpReceiveResponse(request_, nullptr))
+		{
+			if (error) *error = "WinHttpReceiveResponse failed (" + std::to_string(GetLastError()) + ")";
+			Close();
+			return false;
+		}
+
+		DWORD status = 0;
+		DWORD status_size = sizeof(status);
+		WinHttpQueryHeaders(
+			request_,
+			WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+			WINHTTP_HEADER_NAME_BY_INDEX,
+			&status,
+			&status_size,
+			WINHTTP_NO_HEADER_INDEX
+		);
+
+		if (status != 101)
+		{
+			if (error) *error = "handshake failed (HTTP " + std::to_string(status) + ")";
+			Close();
+			return false;
+		}
+
+		websocket_ = WinHttpWebSocketCompleteUpgrade(request_, 0);
+		if (!websocket_)
+		{
+			if (error) *error = "websocket upgrade failed (" + std::to_string(GetLastError()) + ")";
+			Close();
+			return false;
+		}
+
+		// The request handle is done once the websocket exists.
+		WinHttpCloseHandle(static_cast<HINTERNET>(request_));
+		request_ = nullptr;
 
 		connected_ = true;
 		return true;
@@ -115,93 +172,64 @@ namespace net
 
 	void WsClient::Close()
 	{
-		if (easy_)
-			curl_easy_cleanup(easy_);
-		easy_ = nullptr;
+		if (websocket_)
+		{
+			WinHttpWebSocketClose(static_cast<HINTERNET>(websocket_), WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
+			WinHttpCloseHandle(static_cast<HINTERNET>(websocket_));
+			websocket_ = nullptr;
+		}
+		if (request_)
+		{
+			WinHttpCloseHandle(static_cast<HINTERNET>(request_));
+			request_ = nullptr;
+		}
+		if (connect_)
+		{
+			WinHttpCloseHandle(static_cast<HINTERNET>(connect_));
+			connect_ = nullptr;
+		}
+		if (session_)
+		{
+			WinHttpCloseHandle(static_cast<HINTERNET>(session_));
+			session_ = nullptr;
+		}
+
 		connected_ = false;
 		rx_.clear();
 	}
 
-	WsClient::WaitResult WsClient::Wait(bool readable, int timeout_ms)
-	{
-		if (!easy_ || !connected_)
-			return WaitResult::Error;
-
-		curl_socket_t sock = CURL_SOCKET_BAD;
-		curl_easy_getinfo(easy_, CURLINFO_ACTIVESOCKET, &sock);
-		if (sock == CURL_SOCKET_BAD)
-			return WaitResult::Error;
-
-		fd_set set;
-		FD_ZERO(&set);
-		FD_SET(sock, &set);
-
-		timeval tv;
-		tv.tv_sec = timeout_ms / 1000;
-		tv.tv_usec = (timeout_ms % 1000) * 1000;
-
-		const int rc = select(static_cast<int>(sock) + 1,
-			readable ? &set : nullptr,
-			readable ? nullptr : &set,
-			nullptr,
-			&tv);
-
-		if (rc < 0)
-			return WaitResult::Error;
-		if (rc == 0)
-			return WaitResult::Timeout;
-
-		return WaitResult::Ready;
-	}
-
 	bool WsClient::SendText(const std::string& text)
 	{
-		return SendFrame(text.data(), text.size(), CURLWS_TEXT);
+		return SendFrame(text.data(), text.size(), true);
 	}
 
 	bool WsClient::SendBinary(const void* data, size_t size)
 	{
-		return SendFrame(data, size, CURLWS_BINARY);
+		return SendFrame(data, size, false);
 	}
 
-	bool WsClient::SendFrame(const void* data, size_t size, unsigned flags)
+	bool WsClient::SendFrame(const void* data, size_t size, bool text)
 	{
-		if (!connected_ || !easy_)
+		if (!connected_ || !websocket_)
 			return false;
 
-		const auto* bytes = static_cast<const uint8_t*>(data);
-		size_t offset = 0;
-		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-
-		while (offset < size)
+		if (size > 0xffffffffull)
 		{
-			size_t sent = 0;
-			const CURLcode rc = curl_ws_send(
-				easy_,
-				reinterpret_cast<const char*>(bytes + offset),
-				size - offset,
-				&sent,
-				0,
-				flags
-			);
+			connected_ = false;
+			return false;
+		}
 
-			if (rc == CURLE_AGAIN)
-			{
-				if (Wait(false, 50) != WaitResult::Ready || std::chrono::steady_clock::now() > deadline)
-				{
-					connected_ = false;
-					return false;
-				}
-				continue;
-			}
+		const DWORD error = WinHttpWebSocketSend(
+			static_cast<HINTERNET>(websocket_),
+			text ? WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE : WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE,
+			const_cast<void*>(data),
+			DWORD(size)
+		);
 
-			if (rc != CURLE_OK)
-			{
-				connected_ = false;
-				return false;
-			}
-
-			offset += sent;
+		if (error != ERROR_SUCCESS)
+		{
+			connected_ = false;
+			return false;
 		}
 
 		return true;
@@ -209,19 +237,10 @@ namespace net
 
 	bool WsClient::Poll(int timeout_ms)
 	{
-		if (!connected_ || !easy_)
-			return false;
+		(void)timeout_ms; // the receive timeout is configured on the session
 
-		switch (Wait(true, timeout_ms))
-		{
-		case WaitResult::Error:
-			connected_ = false;
+		if (!connected_ || !websocket_)
 			return false;
-		case WaitResult::Timeout:
-			return connected_;
-		case WaitResult::Ready:
-			break;
-		}
 
 		DrainIncoming();
 		return connected_;
@@ -233,41 +252,50 @@ namespace net
 
 		for (;;)
 		{
-			size_t received = 0;
-			const curl_ws_frame* meta = nullptr;
-			const CURLcode rc = curl_ws_recv(easy_, buffer, sizeof(buffer), &received, &meta);
+			DWORD received = 0;
+			WINHTTP_WEB_SOCKET_BUFFER_TYPE type = WINHTTP_WEB_SOCKET_UNKNOWN_BUFFER_TYPE;
 
-			if (rc == CURLE_AGAIN)
+			const DWORD error = WinHttpWebSocketReceive(
+				static_cast<HINTERNET>(websocket_),
+				buffer,
+				DWORD(sizeof(buffer)),
+				&received,
+				&type
+			);
+
+			// No data within the receive timeout: normal for a quiet relay.
+			if (error == ERROR_WINHTTP_TIMEOUT)
 				return;
 
-			if (rc != CURLE_OK)
+			if (error != ERROR_SUCCESS)
 			{
 				connected_ = false;
 				return;
 			}
 
-			if (!meta)
-				continue;
-
-			if (meta->flags & CURLWS_CLOSE)
+			if (type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE)
 			{
 				connected_ = false;
 				return;
 			}
 
-			// Control frames are handled by libcurl itself.
-			if (meta->flags & (CURLWS_PING | CURLWS_PONG))
-				continue;
+			if (type == WINHTTP_WEB_SOCKET_UNKNOWN_BUFFER_TYPE)
+				return;
 
 			if (received == 0)
 				continue;
 
+			const bool fragment =
+				type == WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE ||
+				type == WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE;
+
 			if (rx_.empty())
-				rx_binary_ = (meta->flags & CURLWS_BINARY) != 0;
+				rx_binary_ = (type == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE ||
+					type == WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE);
 
 			rx_.insert(rx_.end(), buffer, buffer + received);
 
-			if (IsFinalChunk(meta))
+			if (!fragment)
 			{
 				if (on_message_ && !rx_.empty())
 					on_message_(rx_binary_, rx_.data(), rx_.size());

@@ -1,15 +1,14 @@
 #pragma once
 
-// Minimal WebSocket client over libcurl (already a project dependency).
+// Minimal WebSocket client.
 //
-// The vendored libcurl is 8.4.0-DEV with Schannel, so both ws:// and wss://
-// work without adding a TLS library.
+// Implemented with WinHTTP, which is part of Windows: it gives us ws:// and
+// wss:// (Schannel TLS) without adding a dependency. The vendored libcurl is
+// built without WebSocket support, so it cannot be used for this.
 //
-// libcurl 8.4 predates curl_easy_poll(), so readiness is detected with
-// select() on CURLINFO_ACTIVESOCKET, which is the pattern used by libcurl's
-// own websocket example.
-//
-// Single-threaded by design: one publisher thread owns one WsClient.
+// Single-threaded by design: one publisher thread owns one WsClient. Receive
+// is polled (with a short timeout) rather than run on its own thread, so the
+// caller controls how long a poll may block.
 
 #include <cstdint>
 #include <functional>
@@ -39,26 +38,25 @@ namespace net
 		bool SendText(const std::string& text);
 		bool SendBinary(const void* data, size_t size);
 
-		// Pumps the connection for at most timeout_ms and dispatches complete
-		// messages. Returns false when the connection dropped.
+		// Receives at most one chunk (bounded by the receive timeout) and
+		// dispatches complete messages. Returns false when the connection dropped.
 		bool Poll(int timeout_ms);
 
 		void SetOnMessage(MessageCallback cb) { on_message_ = std::move(cb); }
 
-		// libcurl version plus the protocols it was built with, for diagnostics.
 		static std::string RuntimeInfo();
 
 	private:
-		enum class WaitResult { Ready, Timeout, Error };
-
-		WaitResult Wait(bool readable, int timeout_ms);
-		bool SendFrame(const void* data, size_t size, unsigned flags);
+		bool SendFrame(const void* data, size_t size, bool text);
 		void DrainIncoming();
 
-		void* easy_ = nullptr; // CURL*
+		void* session_ = nullptr;  // HINTERNET
+		void* connect_ = nullptr;  // HINTERNET
+		void* request_ = nullptr;  // HINTERNET
+		void* websocket_ = nullptr; // HINTERNET
 		bool connected_ = false;
 
-		// Reassembly buffer for fragmented websocket messages.
+		// Reassembly buffer for fragmented messages.
 		std::vector<uint8_t> rx_;
 		bool rx_binary_ = false;
 
