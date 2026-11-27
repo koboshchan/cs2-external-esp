@@ -5,6 +5,7 @@
 enum Tab {
     PLAYER,
     COMBAT,
+    HOST,
     WORLD,
     SETTINGS,
     SCRIPTS
@@ -21,6 +22,7 @@ static const TabItem tabs[] =
 {
     { Tab::PLAYER,      "Player",   Icons::PERSON },
     { Tab::COMBAT,      "Combat",   Icons::PEOPLE },
+    { Tab::HOST,        "Host",     Icons::DISCORD },
     { Tab::WORLD,       "World",    Icons::GLOBE },
     { Tab::SCRIPTS,     "Scripts",  Icons::RELOAD },
     { Tab::SETTINGS,    "Settings", Icons::SETTINGS },

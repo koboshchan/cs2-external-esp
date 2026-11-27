@@ -189,6 +189,7 @@
     <ClCompile Include="core\engine\features\Bhop.cpp" />
     <ClCompile Include="net\ws_client.cpp" />
     <ClCompile Include="net\publisher.cpp" />
+    <ClCompile Include="net\host_session.cpp" />
     <ClCompile Include="core\engine\classes\Bomb.cpp" />
     <ClCompile Include="core\engine\classes\ObserverServices.cpp" />
     <ClCompile Include="core\engine\Engine.cpp" />
@@ -318,6 +319,8 @@
     <ClInclude Include="net\camera.hpp" />
     <ClInclude Include="net\ws_client.hpp" />
     <ClInclude Include="net\publisher.hpp" />
+    <ClInclude Include="net\endpoint.hpp" />
+    <ClInclude Include="net\host_session.hpp" />
     <ClInclude Include="core\engine\classes\Bomb.hpp" />
     <ClInclude Include="core\engine\types\Weapons.hpp" />
     <ClInclude Include="core\engine\classes\ObserverServices.hpp" />

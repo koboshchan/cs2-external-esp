@@ -19,6 +19,7 @@
 */
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -26,6 +27,8 @@
 #include "updater/Updater.hpp"
 #include "core/engine/Engine.hpp"
 #include "gui/renderer/Renderer.hpp"
+#include "net/endpoint.hpp"
+#include "net/host_session.hpp"
 #include "net/publisher.hpp"
 
 #include <external/exception.hpp>
@@ -126,21 +129,31 @@ int main(int argc, char** argv)
 	LOGF(INFO, "Compiled {}, Welcome to cs2-external-esp-recode!", __TIMESTAMP__);
 
 	// Transport self-test: no game, no overlay, just frames on the wire.
+	// Without --room/--token it creates a room on the relay and prints it.
 	if (options.self_test)
 	{
-		if (options.url.empty() || options.room.empty() || options.token.empty())
+		std::string url = net::ResolveServerUrl(options.url.empty() ? cfg::remote::url : options.url);
+		std::string room = options.room;
+		std::string token = options.token;
+
+		if (room.empty() || token.empty())
 		{
-			LOGF(FATAL, "--net-selftest needs --url=, --room= and --token=");
-			LogHelper::Destroy();
-			return 1;
+			net::HostStatus created;
+			std::string error;
+
+			if (!net::HostSession::CreateRoom(url, created, &error))
+			{
+				LOGF(FATAL, "--net-selftest could not create a room: {}", error);
+				LogHelper::Destroy();
+				return 1;
+			}
+
+			room = created.room;
+			token = created.host_token;
+			std::fprintf(stderr, "[net] room %s (viewer key %s)\n", room.c_str(), created.viewer_key.c_str());
 		}
 
-		const int code = net::Publisher::RunSelfTest(
-			options.url,
-			options.room,
-			options.token,
-			options.self_test_seconds
-		);
+		const int code = net::Publisher::RunSelfTest(url, room, token, options.self_test_seconds);
 
 		LogHelper::Destroy();
 		return code;
@@ -180,8 +193,16 @@ int main(int argc, char** argv)
 
 	if (options.mode == "host")
 	{
-		if (!net::Publisher::Start())
-			LOGF(WARNING, "Remote publishing is not active");
+		std::string error;
+		if (!net::HostSession::Start(&error))
+		{
+			LOGF(WARNING, "Remote publishing is not active: {}", error);
+		}
+		else
+		{
+			const net::HostStatus status = net::HostSession::GetStatus();
+			LOGF(INFO, "[net] room {} ready - share it with the viewer (key {})", status.room, status.viewer_key);
+		}
 	}
 
 	if (!Renderer::Init()) {
@@ -195,7 +216,7 @@ int main(int argc, char** argv)
 	Renderer::Thread();
 
 exit:
-	net::Publisher::Stop();
+	net::HostSession::Stop();
 	LOGF(INFO, "Thats it, im done, hope you had a great time!");
 	LogHelper::Destroy();
 	std::cin.get();

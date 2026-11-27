@@ -63,6 +63,9 @@
     <ClCompile Include="net\publisher.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\host_session.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="core\engine\Engine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -249,6 +252,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\publisher.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\endpoint.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\host_session.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="core\engine\Engine.hpp">

@@ -1,5 +1,7 @@
 #include "Config.hpp"
 
+#include "net/endpoint.hpp"
+
 bool Config::Read() {
 	return GetInstance().ReadImpl();
 }
@@ -146,7 +148,7 @@ bool Config::ReadImpl() {
 
 		// remote
 		cfg::remote::enabled = data["remote"].value("enabled", false);
-		cfg::remote::url = data["remote"].value("url", std::string("ws://127.0.0.1:8080/ws"));
+		cfg::remote::url = net::ResolveServerUrl(data["remote"].value("url", std::string{}));
 		cfg::remote::room = data["remote"].value("room", std::string{});
 		cfg::remote::token = data["remote"].value("token", std::string{});
 		cfg::remote::viewer_key = data["remote"].value("viewer_key", std::string{});

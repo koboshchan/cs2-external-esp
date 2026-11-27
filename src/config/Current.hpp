@@ -144,7 +144,7 @@ namespace cfg {
 	// Remote ESP (host publishing / viewer subscribing)
 	namespace remote {
 		inline bool enabled = false;
-		inline std::string url = "ws://127.0.0.1:8080/ws";
+		inline std::string url = "wss://cs2.kjt.lol/ws";
 		inline std::string room;
 		inline std::string token;      // host token, used when publishing
 		inline std::string viewer_key; // viewer key, used when subscribing
