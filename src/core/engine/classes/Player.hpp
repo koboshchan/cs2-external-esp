@@ -1,27 +1,36 @@
 #pragma once
 #include "core/engine/classes/Bones.hpp"
+#include "core/engine/classes/Weapon.hpp"
+#include "core/engine/classes/ObserverServices.hpp"
 
 class Player {
 public:
-    Player(int index, uintptr_t le) : index(index), le(le){}
+    Player() {}
+    Player(int index, uintptr_t el, uintptr_t le) 
+        : index(index), entity_list(el), list_entry(le){}
 
     bool Update();
     bool GetBounds(view_matrix_t matrix, Vec2_t size, std::pair<Vec2_t, Vec2_t>& bounds);
-    
-    // Getter for pawn address (needed for TriggerBot and AntiFlash)
+
+    // Raw pawn address, used by the gameplay features (triggerbot, bhop, anti-flash)
     uintptr_t GetPawnAddress() const { return pawn; }
 public:
+    int8_t index = -1; // To use as invalid/un-initialize check
+
     Vec3_t pos;
+    Vec3_t vel;
+
+    // Gameplay feature state
     Vec3_t aim_punch;
-    Vec2_t eye_angles; // Current view angles (pitch, yaw)
-    Vec3_t view_offset; // View height offset (changes with crouch)
+    Vec2_t eye_angles;  // Current view angles (pitch, yaw)
+    Vec3_t view_offset; // View height offset (changes when crouching)
+    int shots_fired = 0;
 
     int ping = 0;
     int team = 0;
     int health = 0;
     int armor = 0;
     int money = 0;
-    int shots_fired = 0;
 
     bool bot = true;
     bool alive = false;
@@ -30,18 +39,23 @@ public:
     bool spotted = false;
     bool defusing = false;
     bool localplayer = false;
+    bool has_c4 = false;
 
     char name[32];
     //std::string name;
     uint64_t steam_id{};
 
-    char weapon[32];
-    std::string clean_weapon;
+    Weapon weapon;
+    int32_t ammo;
+    bool is_reloading;
 
     std::vector<bone_pos> bone_list;
+
+    int pawn_controller_addr;
+    ObserverServices observer_services;
 private:
-    int index; 
-    uintptr_t le; // List Entry
+    uintptr_t list_entry;
+    uintptr_t entity_list;
 
     uintptr_t pawn;
     uintptr_t controller;
@@ -55,4 +69,5 @@ private:
     bool UpdateWeapon();
     bool UpdateSkeleton();
     bool UpdateController();
+    bool UpdateObserverServices();
 };

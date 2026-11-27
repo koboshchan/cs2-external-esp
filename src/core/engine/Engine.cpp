@@ -41,37 +41,42 @@ bool Engine::InitImpl() {
         return false;
     }
 
-    // NEW: Fetch offsets from cs2-dumper for auto-update (non-blocking, optional)
+    // Refresh version-dependent offsets from cs2-dumper (optional, keeps features
+    // working across game updates). Falls back to the built-in values on failure.
     LOGF(INFO, "Checking for offset updates from cs2-dumper...");
-    if (!Dumper::FetchOffsetsFromCS2Dumper()) {
+    if (!Dumper::FetchOffsetsFromCS2Dumper())
         LOGF(INFO, "Offset auto-update skipped or failed, using built-in offsets");
-    }
 
-    if (!Config::Read()) 
+    if (!Config::Read())
         LOGF(WARNING, "Failed to parse config, using default values");
 
 #ifdef _DEBUG
     if (!cfg::dev::console)
         LogHelper::Free();
 #endif
-    
+
     std::thread(&Engine::Thread, this).detach();
 
-    LOGF(INFO, "Succesfully initialized engine...");
+    LOGF(INFO, "Successfully initialized engine...");
+    return true;
 }
 
 void Engine::Thread() {
-    using namespace std::chrono_literals;
-    //uintptr_t number = process->read<uintptr_t>(base_engine.base + offsets::buildNumber);
-    //LOGF(VERBOSE, "Build number is {}", number);
+    // TODO: Check build number 
+    // uintptr_t number = process->read<uintptr_t>(base_engine.base + offsets::buildNumber);
 
     while (true) {
+        auto start = steady_clock::now();
+
         Cache::Refresh();
+
         Aimbot::Run();
         TriggerBot::Run();
         AntiFlash::Run();
         Bhop::Run();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+        if (cfg::settings::free_cpu)
+            std::this_thread::sleep_until(start + 1ms);
     }
 }
 
@@ -125,4 +130,4 @@ bool Engine::AwaitModules() {
     } while (true);
 
     return true;
-}   
+}

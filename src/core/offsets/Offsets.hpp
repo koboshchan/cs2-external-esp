@@ -1,95 +1,89 @@
 #pragma once
 
-#include <cstdint> // For std::ptrdiff_t and uintptr_t
+#include <cstddef>
+#include <cstdint>
 #include <string>
 
 namespace offsets
 {
-	// client.dll - Dynamically scanned
-	inline uintptr_t entityList;
-	inline uintptr_t viewMatrix;
-	inline uintptr_t localPlayerController;
-	inline uintptr_t globalVars;
-	inline uintptr_t plantedC4;
-	inline uintptr_t viewAngles; // CRITICAL: For SetViewAngle
-	inline uintptr_t localPlayerPawn; // For direct pawn access
-	inline uintptr_t forceJump; // For bunnyhopping
+	// client.dll
+	inline DWORD entityList;
+	inline DWORD viewMatrix;
+	inline DWORD localPlayerController;
+	inline DWORD globalVars;
+	inline DWORD plantedC4;
+	inline DWORD weaponC4;
+
+	// client.dll - gameplay features (refreshed from cs2-dumper at runtime,
+	// values below are the built-in fallback for the current game version)
+	inline DWORD viewAngles = 0x2574BE8;     // dwViewAngles
+	inline DWORD forceJump = 0x222F010;      // client.dll jump button
+	inline DWORD localPlayerPawn = 0x255EAB8; // dwLocalPlayerPawn
 
 	// engine2.dll
-	inline uintptr_t buildNumber;
+	inline DWORD buildNumber;
 
 	namespace controller {
-		constexpr std::ptrdiff_t m_iPing = 0x828; // uint32
-		constexpr std::ptrdiff_t m_hPawn = 0x6C4; // CHandle<C_BasePlayerPawn>
-		constexpr std::ptrdiff_t m_steamID = 0x780; // uint64
-		constexpr std::ptrdiff_t m_iszPlayerName = 0x6F8; // char[128]
-		constexpr std::ptrdiff_t m_bIsLocalPlayerController = 0x788; // bool
-		constexpr std::ptrdiff_t m_pInGameMoneyServices = 0x808; // CCSPlayerController_InGameMoneyServices*
+		constexpr std::ptrdiff_t m_iPing = 0x838; // uint32
+		constexpr std::ptrdiff_t m_hPawn = 0x6BC; // CHandle<C_BasePlayerPawn>
+		constexpr std::ptrdiff_t m_steamID = 0x788; // uint64
+		constexpr std::ptrdiff_t m_iszPlayerName = 0x6FC; // char[128]
+		constexpr std::ptrdiff_t m_bIsLocalPlayerController = 0x790; // bool
+		constexpr std::ptrdiff_t m_pInGameMoneyServices = 0x818; // CCSPlayerController_InGameMoneyServices*
 		constexpr std::ptrdiff_t m_iAccount = 0x40; // int32 - CCSPlayerController_InGameMoneyServices 
-
-		//constexpr std::ptrdiff_t health = 0x32C;
-		//constexpr std::ptrdiff_t teamId = 0x3BF;
-		//constexpr std::ptrdiff_t isAlive = 0x7DC;
-		//constexpr std::ptrdiff_t playerPawn = 0x5F4;
-		//constexpr std::ptrdiff_t iszPlayerName = 0x628;
 	}
 
 	namespace pawn {
-		constexpr std::ptrdiff_t m_vOldOrigin = 0x1588; // Vector
-		constexpr std::ptrdiff_t m_iHealth = 0x354; // int32
-		constexpr std::ptrdiff_t m_iTeamNum = 0x3F3; // uint8
-		constexpr std::ptrdiff_t m_bIsScoped = 0x26F8; // bool
-		constexpr std::ptrdiff_t m_ArmorValue = 0x272C; // int32
-		constexpr std::ptrdiff_t m_bIsDefusing = 0x26FA; // bool
-		constexpr std::ptrdiff_t m_pGameSceneNode = 0x338; // CGameSceneNode*
-		constexpr std::ptrdiff_t m_pClippingWeapon = 0x3DC0; // C_CSWeaponBase*
-		constexpr std::ptrdiff_t m_entitySpottedState = 0x26E0; // EntitySpottedState_t
+		constexpr std::ptrdiff_t m_vOldOrigin = 0x14A4; // Vector
+		constexpr std::ptrdiff_t m_iHealth = 0x34C; // int32
+		constexpr std::ptrdiff_t m_iTeamNum = 0x3E7; // uint8
+		constexpr std::ptrdiff_t m_bIsScoped = 0x1ED0; // bool
+		constexpr std::ptrdiff_t m_ArmorValue = 0x1F00; // int32
+		constexpr std::ptrdiff_t m_bIsDefusing = 0x1ED2; // bool
+		constexpr std::ptrdiff_t m_vecAbsVelocity = 0x3F8; // Vector
+
+		constexpr std::ptrdiff_t m_pGameSceneNode = 0x330; // CGameSceneNode*
+
+		constexpr std::ptrdiff_t m_entitySpottedState = 0x1EB8; // EntitySpottedState_t
 		constexpr std::ptrdiff_t m_bSpottedByMask = 0xC; // uint32[2] - EntitySpottedState_t
-		constexpr std::ptrdiff_t m_flFlashOverlayAlpha = 0x15EC; // float32 - C_CSPlayerPawnBase 
-		constexpr std::ptrdiff_t m_aimPunchAngle = 0x16CC; // QAngle - FIXED from 0x1508 (was wrong!)
-		constexpr std::ptrdiff_t m_iShotsFired = 0x270C; // int32 - FIXED from 0x22B4 (was wrong!)
-		
-		// NEW: Missing offsets needed for features
-		constexpr std::ptrdiff_t m_iIDEntIndex = 0x3EAC; // int32 - For TriggerBot (crosshair entity)
-		constexpr std::ptrdiff_t m_flFlashDuration = 0x15F8; // float32 - For Anti-Flash
-		constexpr std::ptrdiff_t m_aimPunchCache = 0x1738; // CUtlVector - For advanced RCS
-		constexpr std::ptrdiff_t m_vecLastClipCameraPos = 0x3DA4; // Vector - Camera position (UPDATED)
-		constexpr std::ptrdiff_t m_angEyeAngles = 0x3DD0; // QAngle - Eye angles (UPDATED from 0x1510)
-		constexpr std::ptrdiff_t m_fFlags = 0x3C8; // uint32 - Player flags (FL_ONGROUND, etc.)
-		constexpr std::ptrdiff_t m_vecViewOffset = 0xD58; // CNetworkViewOffsetVector - View height offset (accounts for crouch)
 
+		constexpr std::ptrdiff_t m_flFlashOverlayAlpha = 0x1504; // float32 - C_CSPlayerPawnBase 
 
-#if 0
-		constexpr std::ptrdiff_t maxHealth = 0x328;
-		constexpr std::ptrdiff_t currentHealth = 0x32C;
-		constexpr std::ptrdiff_t gameSceneNode = 0x310;
-		constexpr std::ptrdiff_t boneArray = 0x1E0;
-		constexpr std::ptrdiff_t angEyeAngles = 0x1510;
-		constexpr std::ptrdiff_t vecLastClipCameraPos = 0x128C;
-		constexpr std::ptrdiff_t pClippingWeapon = 0x12A8;
-		constexpr std::ptrdiff_t iShotsFired = 0x1418;
-		constexpr std::ptrdiff_t flFlashDuration = 0x1468;
-		constexpr std::ptrdiff_t aimPunchAngle = 0x1714;
-		constexpr std::ptrdiff_t aimPunchCache = 0x1738;
-		constexpr std::ptrdiff_t iIdEntIndex = 0x153C;
-		constexpr std::ptrdiff_t iTeamNum = 0x3BF;
-		constexpr std::ptrdiff_t cameraServices = 0x10E0;
-		constexpr std::ptrdiff_t iFovStart = 0x214;
-		constexpr std::ptrdiff_t fFlags = 0x3C8;
-		constexpr std::ptrdiff_t bSpottedByMask = 0x1630 + 0xC; // entitySpottedState + bSpottedByMask
-#endif
+		constexpr std::ptrdiff_t m_pWeaponServices = 0x12F0; // CPlayer_WeaponServices*
+		constexpr std::ptrdiff_t m_hActiveWeapon = 0x60; // CHandle<C_BasePlayerWeapon> - CPlayer_WeaponServices
+		constexpr std::ptrdiff_t m_AttributeManager = 0x1290; // C_AttributeContainer - C_EconEntity (parent of C_BasePlayerWeapon)
+		constexpr std::ptrdiff_t m_Item = 0x50; // C_EconItemView - C_AttributeContainer
+		constexpr std::ptrdiff_t m_iItemDefinitionIndex = 0x1BA; // uint16 - C_EconItemView
+		constexpr std::ptrdiff_t m_iClip1 = 0x1928; // int32 - C_BasePlayerWeapon
+		constexpr std::ptrdiff_t m_bInReload = 0x1A7C; // bool - C_CSWeaponBase
+		constexpr std::ptrdiff_t m_pObserverServices = 0x1308; // CPlayer_ObserverServices*
+
+		// Gameplay features - runtime values so they can be refreshed from cs2-dumper
+		inline std::ptrdiff_t m_iShotsFired = 0x1EE8; // int32 - C_CSPlayerPawn
+		inline std::ptrdiff_t m_iIDEntIndex = 0x370C; // int32 - C_CSPlayerPawn (crosshair entity)
+		inline std::ptrdiff_t m_angEyeAngles = 0x3630; // QAngle - C_CSPlayerPawn
+		inline std::ptrdiff_t m_vecViewOffset = 0xF60; // Vector - C_BaseModelEntity
+		inline std::ptrdiff_t m_fFlags = 0x3F4; // uint32 - C_BaseEntity (FL_ONGROUND)
+		inline std::ptrdiff_t m_flFlashDuration = 0x1510; // float32 - C_CSPlayerPawnBase
+		inline std::ptrdiff_t m_pCameraServices = 0x1328; // CPlayer_CameraServices* - C_BasePlayerPawn
+		inline std::ptrdiff_t m_vecCsViewPunchAngle = 0x48; // QAngle - CPlayer_CameraServices
 	}
 
 	namespace bomb {
 		constexpr std::ptrdiff_t m_isPlanted = 0x8; // unk
-		constexpr std::ptrdiff_t m_bC4Activated = 0x11B8; // bool
-		constexpr std::ptrdiff_t m_nBombSite = 0x1174; // int32
+		constexpr std::ptrdiff_t m_bC4Activated = 0x12D0; // bool
+		constexpr std::ptrdiff_t m_nBombSite = 0x128C; // int32
 
-		constexpr std::ptrdiff_t m_vecAbsOrigin = 0xD0; // VectorWS - CGameSceneNode 
+		constexpr std::ptrdiff_t m_vecAbsOrigin = 0xC8; // VectorWS - CGameSceneNode 
 	}
 
 	namespace bone {
-		constexpr std::ptrdiff_t m_modelState = 0x160; // CModelState
+		constexpr std::ptrdiff_t m_modelState = 0x140; // CModelState
+	}
+
+	namespace observerServices {
+		constexpr std::ptrdiff_t m_iObserverMode = 0x48;
+		constexpr std::ptrdiff_t m_hObserverTarget = 0x4C;
 	}
 
 	namespace global {
@@ -102,16 +96,10 @@ namespace offsets
 	{
 		const std::string viewMatrix = "48 8D 0D ?? ?? ?? ?? 48 C1 E0 06";
 		const std::string globalVars = "48 89 15 ?? ?? ?? ?? 48 89 42";
-		const std::string entityList = "48 8B 0D ?? ?? ?? ?? 48 89 7C 24 ?? 8B FA C1 EB";
+		const std::string entityList = "48 89 0D ?? ?? ?? ?? E9 ?? ?? ?? ?? CC";
 		const std::string localPlayerController = "48 8B 05 ?? ?? ?? ?? 41 89 BE";
-		const std::string plantedC4 = "48 8b 15 ?? ?? ?? ?? 41 FF C0 48 8D 4C 24 ?? 44 89 05 ?? ?? ?? ??"; // 488b15${'} 41ffc0 488d4c24? 448905[4]
-		
-		// NEW: Critical signatures for SetViewAngle and features
-		const std::string viewAngles = "48 8B 0D ?? ?? ?? ?? E9 ?? ?? ?? ?? CC CC CC CC 40 55"; // CRITICAL for SetViewAngle!
-		const std::string localPlayerPawn = "48 8D 05 ?? ?? ?? ?? C3 CC CC CC CC CC CC CC CC 48 83 EC ?? 8B 0D"; // Direct pawn access
-		const std::string forceJump = "48 8B 05 ?? ?? ?? ?? 48 8D 1D ?? ?? ?? ?? 48 89 45"; // For bunnyhopping (optional)
-		
-		const std::string weaponC4 = // 488b15${'} 41ffc0 488d4c24? 448905[4]
+		const std::string plantedC4 = "48 8B 05 ?? ?? ?? ?? 45 32 C0 48 85 C0 74 ?? 44 38 80";
+		const std::string weaponC4 =
 			"48 89 05 ?? ?? ?? ?? "
 			"F7 C1 ?? ?? ?? ?? "
 			"74 ?? "
@@ -126,7 +114,14 @@ namespace offsets
 			"89 05 ?? ?? ?? ?? "
 			"48 8B C6 48 89 34 EA 80 BE";
 
-		const std::string buildNumber = "89 05 ?? ?? ?? ?? 48 8d 0d ?? ?? ?? ?? ff 15 ?? ?? ?? ?? 48 8b 0d"; //"89 05 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? FF 15 ?? ?? ?? ?? 48 8B 0D";
-		
+#if 0
+		const std::string localPlayerPawn = "48 8D 05 ?? ?? ?? ?? C3 CC CC CC CC CC CC CC CC 48 83 EC ?? 8B 0D";
+
+		const std::string csgoInput = "48 89 05 ?? ?? ?? ?? 0F 57 C0 0F 11 05";
+		const std::string viewAngles = "F2 42 0F 10 84 28 ?? ?? ?? ??";
+#endif
+
+		const std::string buildNumber = "89 05 ?? ?? ?? ?? 48 8d 0d ?? ?? ?? ?? ff 15 ?? ?? ?? ?? 48 8b 0d";
+
 	}
 }

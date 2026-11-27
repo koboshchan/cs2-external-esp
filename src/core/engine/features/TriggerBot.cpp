@@ -101,22 +101,16 @@ bool TriggerBot::ShouldShoot(Player* local_player) {
 		return false; // Not aiming at anything
 	}
     
-    // Calculate entity address from ID
-    DWORD64 entity_list = p->read<DWORD64>(client.base + offsets::entityList);
+    // Resolve the entity handle from the entity list (same layout as Player::GetPawn)
+    uintptr_t entity_list = p->read<uintptr_t>(client.base + offsets::entityList);
     if (entity_list == 0)
         return false;
-    
-    DWORD64 list_entry = 0;
-    if (!p->read_raw(entity_list + 0x8 * (crosshair_id >> 9) + 0x10, &list_entry, sizeof(DWORD64)))
-        return false;
-    
+
+    uintptr_t list_entry = p->read<uintptr_t>(entity_list + 0x10 + 0x8 * ((crosshair_id & 0x7FFF) >> 9));
     if (list_entry == 0)
         return false;
-    
-    DWORD64 pawn_address = 0;
-    if (!p->read_raw(list_entry + 0x78 * (crosshair_id & 0x1FF), &pawn_address, sizeof(DWORD64)))
-        return false;
-    
+
+    uintptr_t pawn_address = p->read<uintptr_t>(list_entry + 0x70 * (crosshair_id & 0x1FF));
     if (pawn_address == 0)
         return false;
     

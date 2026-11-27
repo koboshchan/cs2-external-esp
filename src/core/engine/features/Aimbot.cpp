@@ -3,6 +3,9 @@
 #include "core/engine/Engine.hpp"
 #include "core/offsets/Offsets.hpp"
 
+#include <cmath>
+#include <cstdlib>
+
 void Aimbot::Run() {
     auto cache = Cache::CopySnapshot();
     auto& game = cache.game;
@@ -58,6 +61,9 @@ void Aimbot::Run() {
             continue;
 
         if (cfg::aimbot::vis_check && !player.spotted)
+            continue;
+
+        if (cfg::aimbot::bone < 0 || static_cast<size_t>(cfg::aimbot::bone) >= player.bone_list.size())
             continue;
 
         Vec3_t target_pos = player.bone_list[cfg::aimbot::bone].pos;
@@ -179,7 +185,7 @@ void Aimbot::AimAt(Vec3_t target, view_matrix_t matrix) {
         // Apply recoil compensation to DELTAS
         // Note: aim punch in CS2 is typically 0.5 to 2.0 degrees per shot
         // Values above 50 indicate wrong offset
-        if (abs(local_player->aim_punch.x) < 50.0f && abs(local_player->aim_punch.y) < 50.0f) {
+        if (std::fabs(local_player->aim_punch.x) < 50.0f && std::fabs(local_player->aim_punch.y) < 50.0f) {
             yaw_delta -= local_player->aim_punch.y * rcs_scale;
             pitch_delta -= local_player->aim_punch.x * rcs_scale;
         } else {

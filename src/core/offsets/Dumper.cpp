@@ -32,7 +32,7 @@ bool Dumper::InitImpl() {
     // Global Variables
     if (!(temp = Scan(offsets::signatures::globalVars, client))) {
         LOGF(FATAL, "Could not find offset for 'globalVars'");
-        return false;
+        // return false; // Not critical
     }
 
     offsets::globalVars = temp - client.base;
@@ -58,12 +58,21 @@ bool Dumper::InitImpl() {
 
     // C4
     if (!(temp = Scan(offsets::signatures::plantedC4, client))) {
-        LOGF(FATAL, "Could not find offset for 'weaponC4'");
-        return false;
+        LOGF(FATAL, "Could not find offset for 'plantedC4'");
+        //return false;
     }
 
     offsets::plantedC4 = temp - client.base;
-    LOGF(VERBOSE, "Found 'weaponC4' offset at 0x{:X}", offsets::plantedC4);
+    LOGF(VERBOSE, "Found 'plantedC4' offset at 0x{:X}", offsets::plantedC4);
+
+    // C4 carrier pointer
+    if (!(temp = Scan(offsets::signatures::weaponC4, client))) {
+        LOGF(FATAL, "Could not find offset for 'weaponC4 carrier'");
+        return false;
+    }
+
+    offsets::weaponC4 = temp - client.base;
+    LOGF(VERBOSE, "Found 'weaponC4 carrier' offset at 0x{:X}", offsets::weaponC4);
 
     // View Angles - Try direct offset from cs2-dumper
     // Build 14139: dwViewAngles = 36804168 decimal = 0x2319648 hex (FIXED!)
@@ -243,51 +252,81 @@ std::vector<DWORD64> Dumper::ScanMemory(const std::string& sig, DWORD64 start, D
 
 bool Dumper::FetchOffsetsFromCS2DumperImpl() {
     LOGF(INFO, "Attempting to fetch offsets from cs2-dumper repository...");
-    
-    json client_json;
-    
-    // Fetch client_dll.json for pawn offsets
-    auto http_status = HttpHelper::Get("https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/client_dll.json", client_json);
-    
-    if (http_status != 200) {
-        LOGF(WARNING, "Failed to fetch offsets from cs2-dumper (HTTP {}), using hardcoded fallback values", http_status);
+
+    constexpr const char* BASE = "https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/";
+
+    json offsets_json, client_json, buttons_json;
+
+    auto offsets_status = HttpHelper::Get(std::string(BASE) + "offsets.json", offsets_json);
+    auto client_status = HttpHelper::Get(std::string(BASE) + "client_dll.json", client_json);
+    auto buttons_status = HttpHelper::Get(std::string(BASE) + "buttons.json", buttons_json);
+
+    if (offsets_status != 200 || client_status != 200) {
+        LOGF(WARNING, "Failed to fetch cs2-dumper offsets (offsets: {}, client: {})", offsets_status, client_status);
         return false;
     }
-    
+
     try {
-        // Parse pawn offsets from C_CSPlayerPawnBase class (base class has the offsets)
-        auto pawn_base_fields = client_json["client.dll"]["classes"]["C_CSPlayerPawnBase"]["fields"];
-        
-        // Update static offsets that can change between CS2 versions
-        // Note: We only update pawn offsets, module offsets are scanned dynamically
-        
-        auto shots_fired = pawn_base_fields.value("m_iShotsFired", 0);
-        auto aim_punch = pawn_base_fields.value("m_aimPunchAngle", 0);
-        auto id_ent_index = pawn_base_fields.value("m_iIDEntIndex", 0);
-        auto flash_duration = pawn_base_fields.value("m_flFlashDuration", 0);
-        auto aim_punch_cache = pawn_base_fields.value("m_aimPunchCache", 0);
-        
-        LOGF(INFO, "Fetched offsets from cs2-dumper:");
-        LOGF(INFO, "  m_iShotsFired: 0x{:X} (was 0x270C)", shots_fired);
-        LOGF(INFO, "  m_aimPunchAngle: 0x{:X} (was 0x16CC)", aim_punch);
-        LOGF(INFO, "  m_iIDEntIndex: 0x{:X} (was 0x3EAC)", id_ent_index);
-        LOGF(INFO, "  m_flFlashDuration: 0x{:X} (was 0x15F8)", flash_duration);
-        
-        // Verify offsets are reasonable (sanity check)
-        if (shots_fired == 0 || aim_punch == 0) {
-            LOGF(WARNING, "Fetched offsets seem invalid, using hardcoded values");
-            return false;
+        // ---- module offsets (RVA inside client.dll) ----
+        const auto& client_offsets = offsets_json["client.dll"];
+        if (client_offsets.contains("dwViewAngles"))
+            offsets::viewAngles = client_offsets["dwViewAngles"].get<DWORD>();
+        if (client_offsets.contains("dwLocalPlayerPawn"))
+            offsets::localPlayerPawn = client_offsets["dwLocalPlayerPawn"].get<DWORD>();
+
+        // ---- jump button ----
+        if (buttons_status == 200 && buttons_json.contains("client.dll") && buttons_json["client.dll"].contains("jump"))
+            offsets::forceJump = buttons_json["client.dll"]["jump"].get<DWORD>();
+
+        // ---- pawn / entity fields used by the gameplay features ----
+        const auto& classes = client_json["client.dll"]["classes"];
+
+        auto apply = [&](const char* cls, const char* field, std::ptrdiff_t& target) -> bool {
+            if (!classes.contains(cls))
+                return false;
+
+            const auto& fields = classes[cls]["fields"];
+            if (!fields.contains(field))
+                return false;
+
+            target = fields[field].get<std::ptrdiff_t>();
+            return true;
+        };
+
+        int applied = 0;
+        applied += apply("C_CSPlayerPawn", "m_iShotsFired", offsets::pawn::m_iShotsFired);
+        applied += apply("C_CSPlayerPawn", "m_iIDEntIndex", offsets::pawn::m_iIDEntIndex);
+        applied += apply("C_CSPlayerPawn", "m_angEyeAngles", offsets::pawn::m_angEyeAngles);
+        applied += apply("C_BaseModelEntity", "m_vecViewOffset", offsets::pawn::m_vecViewOffset);
+        applied += apply("C_BaseEntity", "m_fFlags", offsets::pawn::m_fFlags);
+        applied += apply("C_CSPlayerPawnBase", "m_flFlashDuration", offsets::pawn::m_flFlashDuration);
+        applied += apply("C_BasePlayerPawn", "m_pCameraServices", offsets::pawn::m_pCameraServices);
+        applied += apply("CPlayer_CameraServices", "m_vecCsViewPunchAngle", offsets::pawn::m_vecCsViewPunchAngle);
+
+        LOGF(INFO, "Applied {} feature offsets from cs2-dumper:", applied);
+        LOGF(INFO, "  dwViewAngles:            0x{:X}", offsets::viewAngles);
+        LOGF(INFO, "  jump button:             0x{:X}", offsets::forceJump);
+        LOGF(INFO, "  m_iShotsFired:           0x{:X}", offsets::pawn::m_iShotsFired);
+        LOGF(INFO, "  m_iIDEntIndex:           0x{:X}", offsets::pawn::m_iIDEntIndex);
+        LOGF(INFO, "  m_angEyeAngles:          0x{:X}", offsets::pawn::m_angEyeAngles);
+        LOGF(INFO, "  m_vecViewOffset:         0x{:X}", offsets::pawn::m_vecViewOffset);
+        LOGF(INFO, "  m_fFlags:                0x{:X}", offsets::pawn::m_fFlags);
+        LOGF(INFO, "  m_flFlashDuration:       0x{:X}", offsets::pawn::m_flFlashDuration);
+        LOGF(INFO, "  m_pCameraServices:       0x{:X}", offsets::pawn::m_pCameraServices);
+        LOGF(INFO, "  m_vecCsViewPunchAngle:   0x{:X}", offsets::pawn::m_vecCsViewPunchAngle);
+
+        if (offsets::viewAngles == 0) {
+            LOGF(WARNING, "cs2-dumper did not provide dwViewAngles, aimbot/RCS will be disabled");
         }
-        
-        LOGF(INFO, "Successfully fetched and validated offsets from cs2-dumper");
-        LOGF(WARNING, "NOTE: Auto-fetched offsets are logged but NOT applied automatically.");
-        LOGF(WARNING, "      This is a safety feature. If offsets differ significantly, update Offsets.hpp manually.");
-        
-        return true;
+        if (offsets::forceJump == 0) {
+            LOGF(WARNING, "cs2-dumper did not provide the jump button, bhop will be disabled");
+        }
+
+        return applied > 0;
     }
     catch (std::exception& e) {
         LOGF(WARNING, "Failed to parse cs2-dumper offsets: {}", e.what());
-        LOGF(WARNING, "Using hardcoded fallback values");
+        LOGF(WARNING, "Using built-in fallback values");
         return false;
     }
 }

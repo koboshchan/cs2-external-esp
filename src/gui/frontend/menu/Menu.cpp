@@ -1,16 +1,21 @@
 #include "Menu.hpp"
-
+#include <cstring>
+#include "core/scripting/Scripting.hpp"
 #include "core/engine/cache/Cache.hpp"
 #include "gui/renderer/Renderer.hpp" // Circular dependency
 #include "gui/renderer/window/Window.hpp" // Circular dependency
+#include "assets/fonts/Icons.h"
+#include <shellapi.h>
+
+#pragma comment(lib, "Shell32.lib")
 
 
 bool Menu::Init() {
-    return GetInstance().InitImpl();
+	return GetInstance().InitImpl();
 }
 
 void Menu::Render() {
-    return GetInstance().RenderImpl();
+	return GetInstance().RenderImpl();
 }
 
 void Menu::RenderStartupHelp() {
@@ -27,9 +32,10 @@ ImVec2 Menu::GetSize() {
 
 bool Menu::InitImpl() {
 	SetupStyles();
+	theme::ThemeManager::Get().Init();
 
-    LOGF(INFO, "Successfully initialized menu...");
-    return true;
+	LOGF(INFO, "Successfully initialized menu...");
+	return true;
 }
 
 void Menu::RenderImpl() {
@@ -43,287 +49,518 @@ void Menu::RenderImpl() {
 #ifdef _DEBUG
 	static auto title = "github.com/IMXNOOBX/cs2-external-esp (recode) [DEV]";
 #else
-	static auto title = "cs2-external-esp | recode (PTB)";
+	static auto title = "cs2-external-esp | recode";
 #endif
 
-	ImGui::SetNextWindowSize(ImVec2(600, 350), ImGuiCond_FirstUseEver);
-	ImGui::SetNextWindowPos(ImVec2(screen.x/2 - 300, screen.y/2 - 150), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(ImVec2(600, 370), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowPos(ImVec2(screen.x / 2 - 300, screen.y / 2 - 150), ImGuiCond_FirstUseEver);
 
 	ImGui::GetWindowPos();
 	if (ImGui::Begin(title, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
 		this->pos = ImGui::GetWindowPos();
 		this->size = ImGui::GetWindowSize();
 
-		ImGui::Checkbox("Enable", &cfg::enabled);
-		ImGui::SameLine();
-		ImGui::Dummy(ImVec2(340, 0));
-		ImGui::SameLine();
-		ImGui::TextLinkOpenURL("Source/Support", "https://github.com/IMXNOOBX/cs2-external-esp");
-		ImGui::SameLine();
-		ImGui::TextLinkOpenURL("Discord", "https://discord.gg/pRew8ZDkyp");
+		static int active_tab = 0;
 
-		static int y_space_left;
-		auto space = ImGui::GetContentRegionAvail();
-
-		ImGui::BeginDisabled(!cfg::enabled);
-		if (ImGui::BeginChild("##top", ImVec2(0, space.y / 2 + y_space_left)))
+		if (ImGui::BeginChild("##main_split"))
 		{
-			if (ImGui::BeginChild("##leftside", ImVec2(space.x / 2 - 10, 0)))
+			auto size = ImGui::GetContentRegionAvail();
+
+			ImGui::BeginChild("##tab_buttons", ImVec2(120, size.y), true);
 			{
-				ImGui::Text("Visuals");
-				ImGui::Separator();
-
-				ImGui::BeginGroup();
+				ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.1f, 0.5f));
+				for (const auto& tab : tabs)
 				{
-					ImGui::Checkbox("Box", &cfg::esp::box);
-					ImGui::BeginDisabled(!cfg::esp::box);
+					bool is_active = (active_tab == tab.id);
+
+					if (is_active)
 					{
-						ImGui::SameLine();
-						ImGui::ColorEdit4("Team box color", cfg::esp::colors::box_team.data(), color_flags);
-						ImGui::SetItemTooltip("Team box color");
-
-						ImGui::SameLine();
-						ImGui::ColorEdit4("Enemy box color", cfg::esp::colors::box_enemy.data(), color_flags);
-						ImGui::SetItemTooltip("Enemy box color");
+						const ImGuiStyle& style = ImGui::GetStyle();
+						const ImVec4& active_tab_color = style.Colors[ImGuiCol_TabActive];
+						ImGui::PushStyleColor(ImGuiCol_Button, active_tab_color);
+						ImGui::PushStyleColor(ImGuiCol_ButtonHovered, active_tab_color);
+						ImGui::PushStyleColor(ImGuiCol_ButtonActive, active_tab_color);
 					}
-					ImGui::EndDisabled();
-					
-					ImGui::Checkbox("Skeleton", &cfg::esp::skeleton);
-					ImGui::BeginDisabled(!cfg::esp::skeleton);
-					{
-						ImGui::SameLine();
-						ImGui::ColorEdit4("Team skeleton color", cfg::esp::colors::skeleton_team.data(), color_flags);
-						ImGui::SetItemTooltip("Team skeleton color");
 
-						ImGui::SameLine();
-						ImGui::ColorEdit4("Enemy skeleton color", cfg::esp::colors::skeleton_enemy.data(), color_flags);
-						ImGui::SetItemTooltip("Enemy skeleton color");
-					}
-					ImGui::EndDisabled();
+					if (ImGui::Button((tab.icon + " " + tab.label).c_str(), ImVec2(-1, 28)))
+						active_tab = tab.id;
 
-					ImGui::Checkbox("Head Tracker", &cfg::esp::head_tracker);
-					ImGui::BeginDisabled(!cfg::esp::head_tracker);
-					{
-						ImGui::SameLine();
-						ImGui::ColorEdit4("Team head tracker color", cfg::esp::colors::tracker_team.data(), color_flags);
-						ImGui::SetItemTooltip("Team head tracker color");
-
-						ImGui::SameLine();
-						ImGui::ColorEdit4("Enemy head tracker color", cfg::esp::colors::tracker_enemy.data(), color_flags);
-						ImGui::SetItemTooltip("Enemy head tracker color");
-					}
-					ImGui::EndDisabled();
-
-					ImGui::Checkbox("Show Team", &cfg::esp::team);
+					if (is_active) 
+						ImGui::PopStyleColor(3);
 				}
-				ImGui::EndGroup();
+				ImGui::PopStyleVar(1);
 
+				auto space = ImGui::GetContentRegionAvail().y;
+				ImGui::SetCursorPosY(ImGui::GetCursorPos().y + space - 16.f * 3);
+
+				ImGui::Dummy(ImVec2(11, 0)); ImGui::SameLine();
+				ImGui::TextLinkOpenURL(Icons::DISCORD, "https://discord.gg/pRew8ZDkyp");
 				ImGui::SameLine();
+				ImGui::Dummy(ImVec2(11, 0)); ImGui::SameLine();
+				ImGui::TextLinkOpenURL(Icons::GITHUB, "https://github.com/IMXNOOBX/cs2-external-esp");
+				ImGui::Separator();
 
-				ImGui::BeginGroup();
-				{
-					ImGui::Checkbox("Health", &cfg::esp::health);
-					ImGui::Checkbox("Armor", &cfg::esp::armor);
-					ImGui::Checkbox("Spotted", &cfg::esp::spotted);
-					ImGui::SetItemTooltip("Esp will only be visible if the player has been spotted by you");
-					
-					ImGui::Checkbox("ArUco Markers", &cfg::esp::aruco_markers);
-					ImGui::SetItemTooltip("Display ArUco markers on player heads (requires marker images in aruco/ folder)");
-				}
-				ImGui::EndGroup();
-
-				ImGui::Text("Aimbot & Recoil Control");
-				ImGui::Separator();
-				
-				// Show current weapon info for debugging
-				auto cache = Cache::CopySnapshot();
-				for (auto& player : cache.players) {
-					if (player.localplayer && player.alive) {
-						ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Current Weapon: %s", player.clean_weapon.c_str());
-						ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Shots Fired: %d", player.shots_fired);
-						break;
-					}
-				}
-				
-				// Anti-Recoil section (works independently)
-				ImGui::Text("Pattern-Based Anti-Recoil");
-				ImGui::Separator();
-				ImGui::Checkbox("Anti-Recoil##standalone", &cfg::aimbot::anti_recoil);
-				ImGui::SetItemTooltip("Pattern-based recoil compensation - triggers on LEFT MOUSE BUTTON\nWorks independently, doesn't require aimbot enabled!");
-				
-				// Show anti-recoil options if enabled
-				if (cfg::aimbot::anti_recoil) {
-					ImGui::Indent();
-					ImGui::Checkbox("Auto Rebound##antirecoil", &cfg::aimbot::auto_rebound);
-					ImGui::SetItemTooltip("Automatically return to initial position after spray ends");
-					
-					ImGui::SliderFloat("Pattern Scale##antirecoil", &cfg::aimbot::pattern_scale, 0.5f, 2.0f, "%.2f");
-					ImGui::SetItemTooltip("Adjust pattern intensity for your sensitivity\nDefault 1.0x = sens 2.40-2.60");
-					
-					ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Supported: AK47, M4A4, M4A1-S, FAMAS,");
-					ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "GALIL, AUG, P90");
-					
-					// Show active status
-					if (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
-						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "STATUS: ACTIVE (Shooting)");
-					} else {
-						ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "STATUS: Standby (Hold LMB to activate)");
-					}
-					
-					ImGui::Unindent();
-				}
-				
-				ImGui::Spacing();
-				ImGui::Spacing();
-				
-				// Aimbot section
-				ImGui::Text("Aimbot");
-				ImGui::Separator();
-				ImGui::Checkbox("Aimbot Enabled", &cfg::aimbot::enabled);
-				ImGui::BeginDisabled(!cfg::aimbot::enabled);
-				{
-					// Aimbot Mode selector
-					const char* modes[] = { "Hold Key (C)", "Auto on Shoot" };
-					ImGui::Combo("Activation Mode", &cfg::aimbot::mode, modes, IM_ARRAYSIZE(modes));
-					if (cfg::aimbot::mode == 0) {
-						ImGui::SetItemTooltip("Press and hold 'C' key to aim at target");
-					} else {
-						ImGui::SetItemTooltip("Automatically aims when you start shooting");
-					}
-					
-					ImGui::Checkbox("RCS", &cfg::aimbot::rcs);
-					ImGui::SetItemTooltip("Standard Recoil Control System (aim punch based)");
-					
-					if (cfg::aimbot::rcs) {
-						ImGui::SliderFloat("RCS Scale", &cfg::aimbot::rcs_scale, 0.0f, 2.0f, "%.2f");
-						ImGui::SetItemTooltip("Recoil compensation strength (1.0 = full compensation)");
-					}
-					
-					ImGui::Checkbox("Visibility Check", &cfg::aimbot::vis_check);
-					ImGui::Checkbox("Ignore Team", &cfg::aimbot::ignore_team);
-					ImGui::SliderFloat("FOV", &cfg::aimbot::fov, 0.1f, 100.0f, "%.1f");
-					ImGui::SetItemTooltip("Field of view for aimbot activation (degrees)");
-					ImGui::SliderFloat("Smooth", &cfg::aimbot::smooth, 0.0f, 0.9f, "%.2f");
-					ImGui::SetItemTooltip("Aim smoothing (0.0 = instant snap, 0.9 = very smooth)");
-					ImGui::Checkbox("Draw FOV Circle", &cfg::aimbot::draw_fov);
-					ImGui::SetItemTooltip("Show FOV circle on screen");
-					
-					const char* bones[] = { "Head", "Neck", "Spine", "Pelvis" };
-					static int selected_bone = 0;
-					if (ImGui::Combo("Target Bone", &selected_bone, bones, IM_ARRAYSIZE(bones))) {
-						switch (selected_bone) {
-						case 0: cfg::aimbot::bone = 6; break; // head
-						case 1: cfg::aimbot::bone = 5; break; // neck
-						case 2: cfg::aimbot::bone = 4; break; // spine
-						case 3: cfg::aimbot::bone = 0; break; // pelvis
-						}
-					}
-				}
-				ImGui::EndDisabled();
-			}
-			
-			// TriggerBot Section
-			if (ImGui::CollapsingHeader("TriggerBot", ImGuiTreeNodeFlags_DefaultOpen)) {
-				ImGui::Checkbox("TriggerBot Enabled", &cfg::triggerbot::enabled);
-				ImGui::BeginDisabled(!cfg::triggerbot::enabled);
-				{
-					ImGui::Checkbox("Ignore Team##triggerbot", &cfg::triggerbot::ignore_team);
-					ImGui::SliderInt("Delay##triggerbot", &cfg::triggerbot::delay, 10, 300, "%d ms");
-					ImGui::TextWrapped("Hotkey: ALT (hold to activate)");
-				}
-				ImGui::EndDisabled();
-				ImGui::Spacing();
-			}
-			
-			// Bhop Section
-			if (ImGui::CollapsingHeader("Bhop", ImGuiTreeNodeFlags_DefaultOpen)) {
-				ImGui::Checkbox("Bhop Enabled", &cfg::bhop::enabled);
-				ImGui::TextWrapped("Automatic bunnyhopping - hold SPACE to jump repeatedly.");
-				ImGui::Spacing();
-			}
-			
-			// Anti-Flash Section  
-			if (ImGui::CollapsingHeader("Anti-Flash", ImGuiTreeNodeFlags_DefaultOpen)) {
-				ImGui::Checkbox("Anti-Flash Enabled", &cfg::antiflash::enabled);
-				ImGui::TextWrapped("Automatically removes flashbang effects.");
-				ImGui::Spacing();
+				ImGui::Checkbox("Enable", &cfg::enabled);
 			}
 			ImGui::EndChild();
 
 			ImGui::SameLine();
 
-			if (ImGui::BeginChild("##rightside")) 
+			ImGui::BeginChild("##tab_content", ImVec2(0, size.y), true);
 			{
-				ImGui::Text("Flags");
-				ImGui::Separator();
-
-				ImGui::BeginGroup();
+				if (active_tab == Tab::PLAYER)
 				{
-					ImGui::Checkbox("Name", &cfg::esp::flags::name);
-					ImGui::Checkbox("Weapon", &cfg::esp::flags::weapon);
-					ImGui::Checkbox("Defusing", &cfg::esp::flags::defusing);
-					ImGui::Checkbox("Scoped", &cfg::esp::flags::scoped);
-				}
-				ImGui::EndGroup();
-				
-				ImGui::SameLine();
+					ImGui::Text("Visuals");
+					ImGui::Separator();
 
-				ImGui::BeginGroup();
+					ImGui::BeginGroup();
+					{
+						ImGui::Checkbox("Box", &cfg::esp::box);
+						ImGui::BeginDisabled(!cfg::esp::box);
+						{
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Team box color", cfg::esp::colors::box_team.data(), color_flags);
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Enemy box color", cfg::esp::colors::box_enemy.data(), color_flags);
+						}
+						ImGui::EndDisabled();
+
+						ImGui::Checkbox("Skeleton", &cfg::esp::skeleton);
+						ImGui::BeginDisabled(!cfg::esp::skeleton);
+						{
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Team skeleton color", cfg::esp::colors::skeleton_team.data(), color_flags);
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Enemy skeleton color", cfg::esp::colors::skeleton_enemy.data(), color_flags);
+						}
+						ImGui::EndDisabled();
+
+						ImGui::Checkbox("Head Tracker", &cfg::esp::head_tracker);
+						ImGui::BeginDisabled(!cfg::esp::head_tracker);
+						{
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Team head tracker color", cfg::esp::colors::tracker_team.data(), color_flags);
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Enemy head tracker color", cfg::esp::colors::tracker_enemy.data(), color_flags);
+						}
+						ImGui::EndDisabled();
+
+						ImGui::Checkbox("Tracers", &cfg::esp::tracers);
+						ImGui::BeginDisabled(!cfg::esp::tracers);
+						{
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Team tracer color", cfg::esp::colors::tracer_team.data(), color_flags);
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Enemy tracer color", cfg::esp::colors::tracer_enemy.data(), color_flags);
+						}
+						ImGui::EndDisabled();
+					}
+					ImGui::EndGroup();
+
+					ImGui::SameLine();
+
+					ImGui::BeginGroup();
+					{
+						ImGui::Checkbox("Health", &cfg::esp::health);
+						if (cfg::esp::health)
+							ImGui::Checkbox("Health Number", &cfg::esp::health_number);
+						ImGui::Checkbox("Armor", &cfg::esp::armor);
+
+						ImGui::Checkbox("Spotted", &cfg::esp::spotted);
+						ImGui::SetItemTooltip("Esp will only be visible if the player has been spotted by you");
+
+						ImGui::Checkbox("Show Team", &cfg::esp::team);
+					}
+					ImGui::EndGroup();
+
+					//ImGui::SameLine();
+					ImGui::Spacing();
+
+					ImGui::Text("Flags");
+					ImGui::Separator();
+
+					ImGui::BeginGroup();
+					{
+						ImGui::Checkbox("Flashed", &cfg::esp::flags::flashed);
+						ImGui::BeginDisabled(!cfg::esp::flags::flashed);
+						{
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Team flashed color", cfg::esp::colors::flags::flashed_team.data(), color_flags);
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Enemy flashed color", cfg::esp::colors::flags::flashed_enemy.data(), color_flags);
+						}
+						ImGui::EndDisabled();
+
+						ImGui::Checkbox("Reloading", &cfg::esp::flags::reloading);
+						ImGui::BeginDisabled(!cfg::esp::flags::reloading);
+						{
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Team reloading color", cfg::esp::colors::flags::reloading_team.data(), color_flags);
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Enemy reloading color", cfg::esp::colors::flags::reloading_enemy.data(), color_flags);
+						}
+						ImGui::EndDisabled();
+
+						ImGui::Checkbox("Defusing", &cfg::esp::flags::defusing);
+						ImGui::BeginDisabled(!cfg::esp::flags::defusing);
+						{
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Team defusing color", cfg::esp::colors::flags::defusing_team.data(), color_flags);
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Enemy defusing color", cfg::esp::colors::flags::defusing_enemy.data(), color_flags);
+						}
+						ImGui::EndDisabled();
+
+						ImGui::Checkbox("Scoped", &cfg::esp::flags::scoped);
+						ImGui::BeginDisabled(!cfg::esp::flags::scoped);
+						{
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Team scoped color", cfg::esp::colors::flags::scoped_team.data(), color_flags);
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Enemy scoped color", cfg::esp::colors::flags::scoped_enemy.data(), color_flags);
+						}
+						ImGui::EndDisabled();
+
+						ImGui::Checkbox("Has C4", &cfg::esp::flags::has_c4);
+						ImGui::BeginDisabled(!cfg::esp::flags::has_c4);
+						{
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Team C4 color", cfg::esp::colors::flags::c4_team.data(), color_flags);
+							ImGui::SameLine();
+							ImGui::ColorEdit4("Enemy C4 color", cfg::esp::colors::flags::c4_enemy.data(), color_flags);
+						}
+						ImGui::EndDisabled();
+					}
+					ImGui::EndGroup();
+
+					ImGui::SameLine();
+
+					ImGui::BeginGroup();
+					{
+						ImGui::Checkbox("Name", &cfg::esp::flags::name);
+						ImGui::Checkbox("Money", &cfg::esp::flags::money);
+						ImGui::Checkbox("Weapon", &cfg::esp::flags::weapon);
+						ImGui::Checkbox("Ammo", &cfg::esp::flags::ammo);
+						ImGui::Checkbox("Ping", &cfg::esp::flags::ping);
+					}
+					ImGui::EndGroup();
+				}
+				else if (active_tab == Tab::COMBAT)
 				{
-					ImGui::Checkbox("Money", &cfg::esp::flags::money);
-					ImGui::Checkbox("Flashed", &cfg::esp::flags::flashed);
-					ImGui::Checkbox("Ping", &cfg::esp::flags::ping);
+					ImGui::Text("Aimbot");
+					ImGui::Separator();
+
+					ImGui::Checkbox("Enable Aimbot", &cfg::aimbot::enabled);
+					ImGui::BeginDisabled(!cfg::aimbot::enabled);
+					{
+						const char* modes[] = { "Hold Key (C)", "Auto on Shoot" };
+						ImGui::Combo("Activation", &cfg::aimbot::mode, modes, IM_ARRAYSIZE(modes));
+						if (cfg::aimbot::mode == 0)
+							ImGui::SetItemTooltip("Hold the C key to aim at the closest target");
+						else
+							ImGui::SetItemTooltip("Aim automatically while shooting");
+
+						ImGui::Checkbox("Recoil Control (RCS)", &cfg::aimbot::rcs);
+						if (cfg::aimbot::rcs)
+						{
+							ImGui::SameLine();
+							ImGui::SliderFloat("RCS Scale", &cfg::aimbot::rcs_scale, 0.0f, 2.0f, "%.2f");
+						}
+
+						ImGui::Checkbox("Visibility Check", &cfg::aimbot::vis_check);
+						ImGui::Checkbox("Ignore Team", &cfg::aimbot::ignore_team);
+
+						ImGui::SliderFloat("FOV", &cfg::aimbot::fov, 0.1f, 100.0f, "%.1f");
+						ImGui::SliderFloat("Smooth", &cfg::aimbot::smooth, 0.0f, 0.9f, "%.2f");
+						ImGui::SetItemTooltip("0.0 = instant snap, 0.9 = very smooth");
+
+						ImGui::Checkbox("Draw FOV Circle", &cfg::aimbot::draw_fov);
+
+						const char* bones[] = { "Head", "Neck", "Spine", "Pelvis" };
+						int selected_bone = 0;
+						if (cfg::aimbot::bone == 5) selected_bone = 1;
+						else if (cfg::aimbot::bone == 4) selected_bone = 2;
+						else if (cfg::aimbot::bone == 0) selected_bone = 3;
+
+						if (ImGui::Combo("Target Bone", &selected_bone, bones, IM_ARRAYSIZE(bones)))
+						{
+							switch (selected_bone)
+							{
+							case 0: cfg::aimbot::bone = 6; break; // head
+							case 1: cfg::aimbot::bone = 5; break; // neck
+							case 2: cfg::aimbot::bone = 4; break; // spine
+							case 3: cfg::aimbot::bone = 0; break; // pelvis
+							}
+						}
+					}
+					ImGui::EndDisabled();
+
+					ImGui::Spacing();
+					ImGui::Text("TriggerBot");
+					ImGui::Separator();
+
+					ImGui::Checkbox("Enable TriggerBot", &cfg::triggerbot::enabled);
+					ImGui::BeginDisabled(!cfg::triggerbot::enabled);
+					{
+						ImGui::Checkbox("Ignore Team##triggerbot", &cfg::triggerbot::ignore_team);
+						ImGui::SliderInt("Delay##triggerbot", &cfg::triggerbot::delay, 10, 300, "%d ms");
+						ImGui::TextDisabled("Hold ALT to activate");
+					}
+					ImGui::EndDisabled();
+
+					ImGui::Spacing();
+					ImGui::Text("Movement");
+					ImGui::Separator();
+
+					ImGui::Checkbox("Bhop", &cfg::bhop::enabled);
+					ImGui::SetItemTooltip("Hold SPACE to bunnyhop automatically");
+
+					ImGui::Spacing();
+					ImGui::Text("Utility");
+					ImGui::Separator();
+
+					ImGui::Checkbox("Anti-Flash", &cfg::antiflash::enabled);
+					ImGui::SetItemTooltip("Removes flashbang effects");
 				}
-				ImGui::EndGroup();
-			}
-			ImGui::EndChild();
-		}
-		ImGui::EndChild();
-		ImGui::EndDisabled();
+				else if (active_tab == Tab::WORLD)
+				{
+					ImGui::Text("Bomb");
+					ImGui::Separator();
+					{
+						ImGui::Checkbox("Bomb ESP", &cfg::esp::bomb);
+						ImGui::SameLine();
+						ImGui::ColorEdit4("Bomb color", cfg::esp::bomb_color.data(), color_flags);
+					}
+					ImGui::Checkbox("Bomb Location", &cfg::world::bomb::location);
+					ImGui::Checkbox("Bomb Timer", &cfg::world::bomb::timer);
 
-		if (ImGui::BeginChild("##bottom"))
-		{
-			ImGui::Text("Settings");
-			ImGui::Separator();
+					ImGui::Spacing();
 
-			if (ImGui::Checkbox("Streamproof", &cfg::settings::streamproof)) {
-				Window::SetAffinity(
-					Window::hwnd, 
-					cfg::settings::streamproof ? WindowAffinity::Invisible : WindowAffinity::Disabled
-				);
-			}
+					ImGui::Text("Spectator list");
+					ImGui::Separator();
 
-			ImGui::Checkbox("Watermark", &cfg::settings::watermark);
-			ImGui::Checkbox("Crosshair", &cfg::settings::crosshair);
+					ImGui::Checkbox("Enable", &cfg::world::spectators::enabled);
+					if (cfg::world::spectators::enabled) {
+						ImGui::Checkbox("Detailed", &cfg::world::spectators::detailed);
+						ImGui::Checkbox("Only Self", &cfg::world::spectators::self_only);
+						ImGui::SetItemTooltip("Only display users spectating you");
+					}
 
-			if (ImGui::Checkbox("VSync", &cfg::settings::vsync))
-				Window::vsync = cfg::settings::vsync;
-			ImGui::SetItemTooltip("VSync, matches render speed with screen refresh rate, improving performance");
+					ImGui::Spacing();
 
-#ifdef _DEBUG
-			ImGui::Text("Dev");
-			ImGui::Separator();
+					ImGui::Text("Misc");
+					ImGui::Separator();
 
-			if (ImGui::Checkbox("Console", &cfg::dev::console)) 
-				if (!cfg::dev::console) LogHelper::Free();
-			
-			static int key_out;
-			if (ImGui::Button("Open Menu Key")) {
-				for (int i = ImGuiKey_NamedKey_BEGIN; i < ImGuiKey_NamedKey_END; i++) {
-					if (ImGui::IsKeyPressed((ImGuiKey)i)) {
-						key_out = i;
-						LOGF(VERBOSE, "Changed the open menu key to {}", key_out);
-						break;
+					ImGui::Checkbox("Crosshair", &cfg::world::crosshair::enabled);
+					ImGui::Checkbox("Velocity Graph", &cfg::world::velocity::enabled);
+				#ifdef _DEBUG // Part of the velocity graph for developers
+					if (cfg::world::velocity::enabled) {
+						ImGui::SliderInt("Sample rate", &cfg::world::velocity::sample_rate, 1, 100);
+						ImGui::SliderFloat("Sample length", &cfg::world::velocity::sample_length, 1, 20, "%.1f");
+					}
+				#endif
+					ImGui::Spacing();
+
+					ImGui::Text("Radar");
+					ImGui::Separator();
+
+					ImGui::Checkbox("Radar", &cfg::world::radar::enabled);
+					ImGui::BeginDisabled(!cfg::world::radar::enabled);
+					{
+						ImGui::SameLine();
+						ImGui::SliderFloat("Range", &cfg::world::radar::range, 100.f, 8000.f, "%.0f u");
+						ImGui::Checkbox("Disable Rotation", &cfg::world::radar::no_rotate);
+					}
+					ImGui::EndDisabled();
+				}
+				else if (active_tab == Tab::SCRIPTS)
+				{
+					ImGui::Text("Scripts");
+					ImGui::SameLine();
+					ImGui::TextLinkOpenURL("Documentation", "https://github.com/IMXNOOBX/cs2-external-esp/blob/main/SCRIPTING.md");
+					ImGui::Separator();
+
+					ImGui::TextWrapped("Scripts load from the current directory and the scripts folder. btn_* functions become buttons. Use Load/Unload per script, or Refresh to rescan the folders.");
+					ImGui::Spacing();
+
+					if (ImGui::Button("Refresh"))
+					{
+						scripting::Scripting::Get().RefreshScripts();
+					}
+					ImGui::SetItemTooltip("Rescan the current directory and scripts folder");
+
+					const auto& scripts = scripting::Scripting::Get().GetScripts();
+
+					int loaded_count = 0;
+					for (const auto& script : scripts)
+					{
+						if (script.loaded)
+							loaded_count++;
+					}
+
+					ImGui::SameLine();
+					ImGui::TextDisabled("%d/%d loaded", loaded_count, (int)scripts.size());
+
+					ImGui::Spacing();
+					ImGui::Separator();
+
+					if (scripts.empty())
+					{
+						ImGui::TextWrapped("No scripts found. Add .sl files to the current directory or a scripts folder.");
+					}
+
+					for (const auto& script : scripts)
+					{
+						ImGui::PushID(script.path.c_str());
+
+						if (ImGui::TextLink(script.name.c_str()))
+						{
+							const auto result = reinterpret_cast<intptr_t>(ShellExecuteA(
+								nullptr,
+								"open",
+								script.path.c_str(),
+								nullptr,
+								nullptr,
+								SW_SHOWNORMAL));
+
+							if (result <= 32)
+								LOGF(WARNING, "Failed to open {}", script.path);
+						}
+						ImGui::SetItemTooltip("Open %s", script.path.c_str());
+
+						ImGui::SameLine();
+
+						bool toggled = false;
+						if (script.loaded)
+						{
+							if (ImGui::SmallButton("Unload"))
+							{
+								scripting::Scripting::Get().UnloadScript(script.path);
+								toggled = true;
+							}
+						}
+						else
+						{
+							if (ImGui::SmallButton("Load"))
+							{
+								scripting::Scripting::Get().LoadScript(script.path);
+								toggled = true;
+							}
+						}
+
+						if (toggled)
+						{
+							ImGui::Separator();
+							ImGui::PopID();
+							continue;
+						}
+
+						if (!script.loaded)
+						{
+							ImGui::SameLine();
+							ImGui::TextDisabled("Unloaded");
+							ImGui::Separator();
+							ImGui::PopID();
+							continue;
+						}
+
+						if (script.buttons.empty())
+						{
+							ImGui::SameLine();
+							ImGui::TextDisabled("No btn_ functions");
+							ImGui::Separator();
+							ImGui::PopID();
+							continue;
+						}
+
+						float available_width = ImGui::GetContentRegionAvail().x;
+						float button_width = 150.0f;
+						float spacing = ImGui::GetStyle().ItemSpacing.x;
+						int buttons_per_row = (int)((available_width + spacing) / (button_width + spacing));
+						if (buttons_per_row < 1) buttons_per_row = 1;
+
+						int col = 0;
+						for (const auto& button : script.buttons)
+						{
+							if (col > 0 && col < buttons_per_row)
+								ImGui::SameLine();
+
+							if (ImGui::Button(button.label.c_str(), ImVec2(button_width, 30)))
+							{
+								scripting::Scripting::Get().ExecuteFunction(script.path, button.function);
+								LOGF(VERBOSE, "Executed {}.{}", script.name, button.function);
+							}
+
+							col++;
+							if (col >= buttons_per_row) col = 0;
+						}
+
+						ImGui::Separator();
+						ImGui::PopID();
 					}
 				}
-			}
+				else if (active_tab == Tab::SETTINGS)
+				{
 
-			ImGui::SliderInt("Cache Refresh Rate", &cfg::dev::cache_refresh_rate, 0, 100, "%dms");
+					ImGui::Spacing();
+					ImGui::Text("Misc");
+					ImGui::Separator();
+
+					if (ImGui::Checkbox("Streamproof", &cfg::settings::streamproof))
+					{
+						Window::SetAffinity(
+							Window::hwnd,
+							cfg::settings::streamproof ? WindowAffinity::Invisible : WindowAffinity::Disabled
+						);
+					}
+
+					ImGui::Checkbox("Watermark", &cfg::settings::watermark);
+
+					if (ImGui::Checkbox("VSync", &cfg::settings::vsync))
+						Window::vsync = cfg::settings::vsync;
+
+					ImGui::Checkbox("Free CPU", &cfg::settings::free_cpu);
+					ImGui::SetItemTooltip("Let the CPU sleep to Free Resources\nNOTE: might cause performance issues in lower end computers!");
+
+					ImGui::Text("Notes");
+					ImGui::Separator();
+					ImGui::TextWrapped(
+						"If you experience bad performance/lag try the following:\n"
+						"\t- Disable ESP VSync: Look up > VSync: Un-Check\n"
+						"\t- Disable VSync in game: ...Advanced Video > V-Sync: Disabled\n"
+						"\t- Last Resort: Disable \"Free CPU\" option, it will inpact on your overall performace, but improve latency\n"
+					);
+
+#ifdef _DEBUG
+					ImGui::Text("Dev");
+					ImGui::Separator();
+
+					if (ImGui::Checkbox("Console", &cfg::dev::console))
+						if (!cfg::dev::console) LogHelper::Free();
+
+					static int key_out;
+					if (ImGui::Button("Open Menu Key"))
+					{
+						for (int i = ImGuiKey_NamedKey_BEGIN; i < ImGuiKey_NamedKey_END; i++)
+						{
+							if (ImGui::IsKeyPressed((ImGuiKey)i))
+							{
+								key_out = i;
+								LOGF(VERBOSE, "Changed the open menu key to {}", key_out);
+								break;
+							}
+						}
+					}
+
+					ImGui::SliderInt("Cache Refresh Rate", &cfg::dev::cache_refresh_rate, 0, 100, "%dms");
+					ImGui::Checkbox("Force Show Flags", &cfg::dev::force_show_flags);
 #endif
+				}
+			}
+			ImGui::EndChild();
+			ImGui::EndChild();
 		}
-		ImGui::EndChild();
 
-		y_space_left = ImGui::GetContentRegionAvail().y;
 	}
 
 	ImGui::End();
@@ -373,7 +610,7 @@ void Menu::SetupStyles() {
 
 	style.Colors[ImGuiCol_Tab] = ImVec4(0.08f, 0.08f, 0.09f, 0.83f);
 	style.Colors[ImGuiCol_TabHovered] = ImVec4(0.33f, 0.34f, 0.36f, 0.83f);
-	style.Colors[ImGuiCol_TabActive] = ImVec4(0.23f, 0.23f, 0.24f, 1.00f);
+	style.Colors[ImGuiCol_TabActive] = ImVec4(0.15f, 0.15f, 0.15f, 1.00f);
 	style.Colors[ImGuiCol_TabUnfocused] = ImVec4(0.08f, 0.08f, 0.09f, 1.00f);
 	style.Colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.13f, 0.14f, 0.15f, 1.00f);
 	style.Colors[ImGuiCol_PlotLines] = ImVec4(0.61f, 0.61f, 0.61f, 1.00f);
@@ -398,10 +635,19 @@ void Menu::SetupStyles() {
 
 	style.GrabRounding = 3.f;
 
-    auto& io = ImGui::GetIO();
+	auto& io = ImGui::GetIO();
 
-    io.Fonts->Clear();
-    io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\arial.ttf", 16.0f);
+	io.Fonts->Clear();
+	io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\arial.ttf", 16.0f);
+
+	ImFontConfig merge_icon_cfg{};
+	merge_icon_cfg.FontDataOwnedByAtlas = false;
+	merge_icon_cfg.MergeMode = true;
+	merge_icon_cfg.GlyphOffset = Vec2_t(0, 3.5f);
+
+	// the icons will use the size specified when getting added so it ignores the base size
+	static const ImWchar icon_ranges[] = { 0xE100, 0xE108, 0 };
+	io.Fonts->AddFontFromMemoryTTF(icons_font, icons_font_len, 20.f, &merge_icon_cfg, icon_ranges);
 }
 
 void Menu::RenderStartupHelpImpl() {

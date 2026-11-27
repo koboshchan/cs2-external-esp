@@ -1,4 +1,30 @@
 #pragma once
+#include "assets/fonts/Icons.h"
+#include "gui/frontend/theme/Theme.hpp"
+
+enum Tab {
+    PLAYER,
+    COMBAT,
+    WORLD,
+    SETTINGS,
+    SCRIPTS
+};
+
+struct TabItem
+{
+    Tab id;
+    std::string label;
+    std::string icon;
+};
+
+static const TabItem tabs[] =
+{
+    { Tab::PLAYER,      "Player",   Icons::PERSON },
+    { Tab::COMBAT,      "Combat",   Icons::PEOPLE },
+    { Tab::WORLD,       "World",    Icons::GLOBE },
+    { Tab::SCRIPTS,     "Scripts",  Icons::RELOAD },
+    { Tab::SETTINGS,    "Settings", Icons::SETTINGS },
+};
 
 class Menu {
 public:
@@ -34,4 +60,6 @@ private:
 
     ImVec2 pos;
     ImVec2 size;
+    
+    ImFont* font_icons;
 };

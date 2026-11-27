@@ -1,7 +1,6 @@
 #pragma once
 
-#include "../../../core/engine/cache/Cache.hpp"
-#include "../aruco/ArucoManager.hpp"
+#include "core/engine/cache/Cache.hpp"
 
 class Esp {
 public:
@@ -13,6 +12,15 @@ public:
 
     static bool Init();
     static void Render();
+
+private:
+    ImGuiIO io;
+    ImFont* font;
+    ImFont* font_merged_icons;
+    ImDrawList* d;
+
+    // Temporary storage for ease
+    view_matrix_t matrix;
 private:
     Esp() {};
 
@@ -25,22 +33,14 @@ private:
     bool InitImpl();
     void RenderImpl();
 
-    ImGuiIO io;
-    ImFont* font;
-    ImDrawList* d;
-
-    // Temporary storage for ease
-    Player* localplayer; 
-    view_matrix_t matrix;
-
-    void RenderPlayer(Player player, bool mate = false, int player_index = 0);
+    void RenderPlayer(Player player, bool mate = false);
     void RenderPlayerBones(Player player, bool mate = false);
     void RenderPlayerBars(Player player, std::pair<Vec2_t, Vec2_t> bounds);
     void RenderPlayerFalgs(Player player, std::pair<Vec2_t, Vec2_t> bounds, bool mate = false);
+    void RenderBombBox(Bomb bomb);
     void RenderPlayerTracker(Player player, std::pair<Vec2_t, Vec2_t> bounds, bool mate = false);
-    void RenderArucoMarkers(Player player, bool mate = false, int player_index = 0);
+    void RenderPlayerTracers(Player source, Player player, bool mate = false);
 
-    void RenderBomb(Bomb bomb);
-	void RenderCrosshair();
+	void RenderCrosshair(Player local);
 	void RenderAimbotFov();
 };

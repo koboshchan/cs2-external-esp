@@ -13,11 +13,12 @@ public:
     bool Update();
 public:
     Vec3_t pos;
+    uintptr_t carrier;
     float time_left = 0.f;
     bool is_planted = false;
     BombSite site = BombSite::Unknown;
 private:
-    uintptr_t address;
+    uintptr_t address = 0;
     static bool prev_is_planted;
     static std::time_t plant_time;
 };

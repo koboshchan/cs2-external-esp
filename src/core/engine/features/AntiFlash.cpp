@@ -24,14 +24,12 @@ void AntiFlash::Run() {
     if (!p)
         return;
     
-    // Try multiple potential flash offsets
-    // cs2-dumper says 0x15F8, but CS2_External uses 0x1468
+    // Offsets are refreshed from cs2-dumper at startup when available
     const std::ptrdiff_t flash_offsets[] = {
-        0x15F8, // m_flFlashDuration from cs2-dumper
-        0x15EC, // m_flFlashOverlayAlpha 
-        0x1468  // from CS2_External (might be outdated)
+        offsets::pawn::m_flFlashDuration,
+        offsets::pawn::m_flFlashOverlayAlpha
     };
-    
+
     float zero = 0.0f;
     for (auto offset : flash_offsets) {
         p->write<float>(local_player->GetPawnAddress() + offset, zero);

@@ -3,28 +3,10 @@
 #include "core/engine/Engine.hpp" // Circular dep
 #include "core/offsets/Dumper.hpp"
 
+#define MAX_CLIENTS 64
+
 bool Cache::Refresh() {
     return Get().RefreshImpl();
-}
-
-Game Cache::CopyGame() {
-    std::lock_guard<std::mutex> lock(Get().mtx);
-    return Get().game;
-}
-
-Bomb Cache::CopyBomb() {
-    std::lock_guard<std::mutex> lock(Get().mtx);
-    return Get().bomb;
-}
-
-Globals Cache::CopyGlobals() {
-    std::lock_guard<std::mutex> lock(Get().mtx);
-    return Get().globals;
-}
-
-std::vector<Player> Cache::CopyPlayers() {
-    std::lock_guard<std::mutex> lock(Get().mtx);
-    return Get().players;
 }
 
 Snapshot Cache::CopySnapshot() {
@@ -32,6 +14,7 @@ Snapshot Cache::CopySnapshot() {
     return {
         Get().game,
         Get().bomb,
+        Get().local,
         Get().globals,
         Get().players
     };
@@ -47,35 +30,37 @@ bool Cache::RefreshImpl() {
     auto now = steady_clock::now();
 
     // Without this, we are pointless :c
-    // And needs to be updated as fast as possible
-    if (!game.Update()) 
+    // Its just calling game.UpdateMatrix() which has to bee updated as fast as possible
+    if (!game.Update())
         return false;
 
 #ifdef _DEBUG
     // Testing performance
-    if (now - last < (cfg::dev::cache_refresh_rate * 1ms))
+    if (now - last < (cfg::dev::cache_refresh_rate * 1ms)) 
         return true;
 #else
     // Just refresh every 5ms good for most people
-    if (now - last < 5ms)
+    if (now - last < 5ms) 
         return true; // All good
 #endif
 
+    game.UpdateEntityList();
     globals.Update();
-    //LOGF(VERBOSE, "Playing in map {} with {} clients & time is {}", globals.map_name, globals.max_clients, globals.current_time);
-
     bomb.Update();
 
     std::vector<Player> scan;
-    scan.reserve(globals.max_clients);
-    for (int i = 0; i < globals.max_clients; i++) {
-        auto player = Player(i, game.list_entry);
+    scan.reserve(MAX_CLIENTS);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        auto player = Player(i, game.entity_list, game.list_entry);
 
         if (!player.Update())
             continue;
 
-        //LOGF(VERBOSE, "Player {} ({}) [{}] has {}hp in team {} at pos ({}x, {}y, {}z)", player.name, player.steam_id, i, player.health, player.team, player.pos.x, player.pos.y, player.pos.z);
-    
+        if (player.localplayer)
+            this->local = player;
+
+        player.has_c4 = (bomb.carrier != 0 && (uintptr_t)player.pawn_controller_addr == bomb.carrier);
+
         scan.push_back(player);
     }
 

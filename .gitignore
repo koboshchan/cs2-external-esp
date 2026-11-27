@@ -3,12 +3,22 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
-# Ignore all the offsets.json files but the one in the folder offsets for the auto updater
-
+# Extra
+typos
+.vscode
 config.json
+crashlog.txt
+scripts.esp
+prelude.sl
+solis_tmp_*.sl
+*.sl
+!assets/themes/themes.sl
+
+# Ignore all the offsets.json files but the one in the folder offsets for the auto updater
+offsets.json
 !offsets/offsets.json 
 .vscode
-typos
+crashlog.txt
 
 # User-specific files
 *.rsuser
@@ -17,11 +27,18 @@ typos
 *.userosscache
 *.sln.docstates
 
+# zig compat libraries
+**/libLIBCMT.a
+**/libOLDNAMES.a
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
 # Mono auto generated files
 mono_crash.*
+
+# Local build output
+build/
 
 # Build results
 [Dd]ebug/
@@ -72,8 +89,6 @@ artifacts/
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
 
-
-build
 # StyleCop
 StyleCopReport.xml
 
@@ -106,6 +121,7 @@ StyleCopReport.xml
 *.pidb
 *.svclog
 *.scc
+*.exe
 
 # Chutzpah Test files
 _Chutzpah*
@@ -405,8 +421,3 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
-
-.conda
-
-tmp
-output

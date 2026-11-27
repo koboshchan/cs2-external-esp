@@ -1,7 +1,8 @@
 #include "Esp.hpp"
-#include "../../renderer/window/Window.hpp"
-#include "../../../common.hpp"
-#include <random>
+
+#include "gui/renderer/Renderer.hpp"
+#include "assets/fonts/WeaponIcons.h"
+#include "assets/fonts/Icons.h"
 
 bool Esp::Init() {
 	return GetInstance().InitImpl();
@@ -19,6 +20,24 @@ bool Esp::InitImpl() {
 
 	this->font = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 12.0f, &cfg);
 
+	this->font_merged_icons = io.Fonts->AddFontFromMemoryTTF(
+		weapon_icon_font,
+		weapon_icon_font_len,
+		16.0f,
+		&cfg
+	);
+
+	cfg.MergeMode = true;
+
+	static const ImWchar general_ranges[] = { 0xE100, 0xE108, 0 };
+	io.Fonts->AddFontFromMemoryTTF(
+		icons_font,
+		icons_font_len,
+		16.0f,
+		&cfg,
+		general_ranges
+	);
+
 	return true;
 }
 
@@ -29,9 +48,10 @@ void Esp::RenderImpl() {
 	auto snapshot = Cache::CopySnapshot();
 	auto& game = snapshot.game;
 	auto& bomb = snapshot.bomb;
+	auto& local = snapshot.local;
 	auto& globals = snapshot.globals;
 	auto& players = snapshot.players;
-
+	
 	ImGui::PushFont(this->font);
 
 	this->io = ImGui::GetIO();
@@ -39,19 +59,14 @@ void Esp::RenderImpl() {
 
 	this->matrix = game.view_matrix;
 
-	static int local_team = 0;
-	for (int i = 0; i < players.size(); ++i) {
-		auto& player = players[i];
+	for (auto& player : players) {
 		if (!player.alive)
 			continue;
 
-		if (player.localplayer) {
-			local_team = player.team;
-			localplayer = &player;
+		if (player.localplayer)
 			continue;
-		}
 
-		bool mate = player.team == local_team;
+		bool mate = player.team == local.team;
 
 		if (!cfg::esp::team && mate)
 			continue;
@@ -59,17 +74,25 @@ void Esp::RenderImpl() {
 		if (cfg::esp::spotted && !player.spotted)
 			continue;
 
-		RenderPlayer(player, mate, i);
+		// Are we spectating the player in first person? then dont render
+		// TODO: Exception here when spectating someone
+		if (
+			local.observer_services.target == player.pawn_controller_addr
+			&& local.observer_services.mode == ObserverMode::First
+		)
+			continue;
+
+		RenderPlayerTracers(local, player, mate);
+		RenderPlayer(player, mate);
 	}
 
-	RenderBomb(bomb);
-	RenderCrosshair();
+	RenderCrosshair(local);
 	RenderAimbotFov();
-
+	RenderBombBox(bomb);
 	ImGui::PopFont();
 }
 
-void Esp::RenderPlayer(Player player, bool mate, int player_index) {
+void Esp::RenderPlayer(Player player, bool mate) {
 	// Needed for flags & item sizing, so even if the box is not enabled
 	// Should be calculated
 	std::pair<Vec2_t, Vec2_t> bounds;
@@ -98,9 +121,6 @@ void Esp::RenderPlayer(Player player, bool mate, int player_index) {
 
 	RenderPlayerBars(player, bounds);
 	RenderPlayerFalgs(player, bounds, mate);
-	
-	// Render ArUco marker on head
-	RenderArucoMarkers(player, mate);
 }
 
 void Esp::RenderPlayerBones(Player player, bool mate) {
@@ -163,7 +183,7 @@ void Esp::RenderPlayerBars(Player player, std::pair<Vec2_t, Vec2_t> bounds) {
 		auto y_end = bounds.second.y;
 
 		float height = y_end - y_start;
-		float filled_height = height * (player.health / 100.0f);
+		float filled_height = height * (std::clamp(player.health, 0, 100) / 100.0f);
 
 		d->AddRectFilled(
 			ImVec2(x_start, y_end - filled_height),
@@ -176,6 +196,20 @@ void Esp::RenderPlayerBars(Player player, std::pair<Vec2_t, Vec2_t> bounds) {
 			ImVec2(x_end, y_end),
 			IM_COL32(0, 0, 0, 50)
 		);
+
+		if (cfg::esp::health_number) {
+			auto txt = std::to_string(player.health);
+			auto sz = ImGui::CalcTextSize(txt.c_str());
+
+			d->AddText(
+				Vec2_t(
+					(x_start + x_end) * 0.5f - sz.x * 0.5f,
+					y_end - filled_height - sz.y * 0.5f
+				),
+				IM_COL32(255, 255, 255, 255),
+				txt.c_str()
+			);
+		}
 	}
 
 	if (cfg::esp::armor) {
@@ -186,7 +220,7 @@ void Esp::RenderPlayerBars(Player player, std::pair<Vec2_t, Vec2_t> bounds) {
 		auto x_end = bounds.second.x;
 
 		float width = x_end - x_start;
-		float filled_width = width * (player.armor / 100.0f);
+		float filled_width = width * (std::clamp(player.armor, 0, 100) / 100.0f);
 
 		d->AddRectFilled(
 			ImVec2(x_start, y_start),
@@ -217,16 +251,17 @@ void Esp::RenderPlayerFalgs(Player player, std::pair<Vec2_t, Vec2_t> bounds, boo
 		);
 	}
 
-	if (cfg::esp::flags::weapon) {
-		auto weapon_size = ImGui::CalcTextSize(player.clean_weapon.data());
+	if (cfg::esp::flags::ammo && player.ammo != -1) {
+		auto txt = std::to_string(player.ammo);
+		auto ammo_size = ImGui::CalcTextSize(txt.c_str());
 
 		d->AddText(
 			Vec2_t(
-				(bounds.first.x + bounds.second.x) / 2 - weapon_size.x / 2,
-				bounds.second.y + 5
-			), 
+				(bounds.first.x + bounds.second.x) / 2 - ammo_size.x / 2,
+				bounds.second.y + 20
+			),
 			IM_COL32(255, 255, 255, 255),
-			player.clean_weapon.data()
+			txt.data()
 		);
 	}
 
@@ -240,7 +275,7 @@ void Esp::RenderPlayerFalgs(Player player, std::pair<Vec2_t, Vec2_t> bounds, boo
 			std::format("{}$", player.money).c_str()
 		);
 
-		offset += offset_mult;
+		offset -= offset_mult;
 	}
 
 	if (cfg::esp::flags::ping && player.ping) {
@@ -250,59 +285,190 @@ void Esp::RenderPlayerFalgs(Player player, std::pair<Vec2_t, Vec2_t> bounds, boo
 			std::format("{}ms", player.ping).c_str()
 		);
 
-		offset += offset_mult;
+		offset -= offset_mult;
 	}
 
-	if (cfg::esp::flags::flashed && player.flashed) {
+	ImGui::PushFont(this->font_merged_icons);
+
+	if (cfg::esp::flags::flashed && player.flashed || cfg::dev::force_show_flags) {
+		auto color = mate ? cfg::esp::colors::flags::flashed_team : cfg::esp::colors::flags::flashed_enemy;
+
 		d->AddText(
 			bounds.first - Vec2_t((bounds.first.x - bounds.second.x) - 10, offset),
-			IM_COL32(100, 255, 100, 255),
-			"flashed"
+			ImColor(color),
+			Icons::BLIND
 		);
 
-		offset += offset_mult;
+		offset -= offset_mult;
 	}
 
-	if (cfg::esp::flags::defusing && player.defusing) {
+	if (cfg::esp::flags::reloading && player.is_reloading || cfg::dev::force_show_flags) {
+		auto color = mate ? cfg::esp::colors::flags::reloading_team : cfg::esp::colors::flags::reloading_enemy;
+
 		d->AddText(
 			bounds.first - Vec2_t((bounds.first.x - bounds.second.x) - 10, offset),
-			IM_COL32(255, 100, 100, 255),
-			"defusing"
+			ImColor(color),
+			Icons::RELOAD
 		);
 
-		offset += offset_mult;
+		offset -= offset_mult;
 	}
 
-	if (cfg::esp::flags::scoped && player.scoped)
-	{
+	if (cfg::esp::flags::defusing && player.defusing || cfg::dev::force_show_flags) {
+		auto color = mate ? cfg::esp::colors::flags::defusing_team : cfg::esp::colors::flags::defusing_enemy;
+
 		d->AddText(
 			bounds.first - Vec2_t((bounds.first.x - bounds.second.x) - 10, offset),
-			IM_COL32(100, 100, 255, 255),
-			"scoped");
+			ImColor(color),
+			WeaponIcons::CUTTERS
+		);
 
-		offset += offset_mult;
+		offset -= offset_mult;
 	}
+
+	if (cfg::esp::flags::scoped && player.scoped || cfg::dev::force_show_flags) {
+		auto color = mate ? cfg::esp::colors::flags::scoped_team : cfg::esp::colors::flags::scoped_enemy;
+
+		d->AddText(
+			bounds.first - Vec2_t((bounds.first.x - bounds.second.x) - 10, offset),
+			ImColor(color),
+			WeaponIcons::SCOPE
+		);
+
+		offset -= offset_mult;
+	}
+
+	if (cfg::esp::flags::weapon) {
+		auto weapon_size = ImGui::CalcTextSize(player.weapon.icon);
+
+		d->AddText(
+			Vec2_t(
+				(bounds.first.x + bounds.second.x) / 2 - weapon_size.x / 2,
+				bounds.second.y + 6
+			),
+			IM_COL32(255, 255, 255, 255),
+			player.weapon.icon
+		);
+	}
+
+	if (cfg::esp::flags::has_c4 && player.has_c4 || cfg::dev::force_show_flags) {
+		auto color = mate ? cfg::esp::colors::flags::c4_team : cfg::esp::colors::flags::c4_enemy;
+
+		ImGui::PushFont(this->font_merged_icons);
+		auto icon_size = ImGui::CalcTextSize(WeaponIcons::C4);
+		ImGui::PopFont();
+
+		// Flash the icon if they're holding the C4, presumably planting since nobody just holds it really
+		ImColor draw_color = ImColor(color);
+		if (player.weapon.item_index == weapon_c4) {
+			float alpha = 0.5f + 0.5f * sinf((float)ImGui::GetTime() * 8.0f);
+			draw_color = ImColor(color.r, color.g, color.b, alpha);
+		}
+
+		d->AddText(
+			this->font_merged_icons,
+			16.0f,
+			Vec2_t(
+				(bounds.first.x + bounds.second.x) / 2 - icon_size.x / 2,
+				bounds.first.y - 20 - icon_size.y - 2
+			),
+			draw_color,
+			WeaponIcons::C4
+		);
+
+		offset -= offset_mult;
+	}
+
+	ImGui::PopFont();
 }
 
-void Esp::RenderCrosshair()
+void Esp::RenderBombBox(Bomb bomb) {
+	if (!cfg::esp::bomb)
+		return;
+
+
+	if (!bomb.is_planted)
+		return;
+
+	// Bomb dimensions
+	float w = 10.f, l = 5.f, h = 10.f;
+	Vec3_t half_size = { w / 2.f, h / 2.f, l / 2.f };
+
+	Vec3_t corners[8] = {
+		{ bomb.pos.x - half_size.x, bomb.pos.y - half_size.y, bomb.pos.z - half_size.z },
+		{ bomb.pos.x + half_size.x, bomb.pos.y - half_size.y, bomb.pos.z - half_size.z },
+		{ bomb.pos.x + half_size.x, bomb.pos.y - half_size.y, bomb.pos.z + half_size.z },
+		{ bomb.pos.x - half_size.x, bomb.pos.y - half_size.y, bomb.pos.z + half_size.z },
+		{ bomb.pos.x - half_size.x, bomb.pos.y + half_size.y, bomb.pos.z - half_size.z },
+		{ bomb.pos.x + half_size.x, bomb.pos.y + half_size.y, bomb.pos.z - half_size.z },
+		{ bomb.pos.x + half_size.x, bomb.pos.y + half_size.y, bomb.pos.z + half_size.z },
+		{ bomb.pos.x - half_size.x, bomb.pos.y + half_size.y, bomb.pos.z + half_size.z },
+	};
+
+	Vec2_t projected[8];
+	bool visible[8] = { false };
+	int visible_count = 0;
+
+	for (int i = 0; i < 8; ++i) {
+		if (matrix.wts(corners[i], io.DisplaySize, projected[i])) {
+			visible[i] = true;
+			visible_count++;
+		}
+	}
+
+	if (visible_count == 0)
+		return;
+
+	auto color = cfg::esp::bomb_color;
+
+	int edges[12][2] = {
+		{ 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 }, // Bottom
+		{ 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 }, // Top
+		{ 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 }  // Verticals
+	};
+
+	for (auto& edge : edges) {
+		int i = edge[0];
+		int j = edge[1];
+		if (visible[i] && visible[j]) {
+			d->AddLine(projected[i], projected[j], ImColor(color), 1.0f);
+		}
+	}
+
+	Vec2_t screen;
+	if (!matrix.wts(bomb.pos + Vec3_t(0, 0, 8), io.DisplaySize, screen))
+		return;
+
+	ImGui::PushFont(this->font_merged_icons);
+	d->AddText(
+		this->font_merged_icons,
+		16.0f,
+		Vec2_t(
+			screen.x - 8, // lazy
+			screen.y
+		),
+		ImColor(255, 255, 255),
+		WeaponIcons::C4
+	);
+	ImGui::PopFont();
+}
+
+void Esp::RenderCrosshair(Player local)
 {
-	if (!cfg::settings::crosshair)
+	if (!cfg::world::crosshair::enabled)
 		return;
 
-	if (!localplayer)
+	if (local.scoped)
 		return;
 
-	if (localplayer->scoped)
+	auto weapon = local.weapon;
+
+	if (weapon.item_index == -1)
 		return;
 
-	auto weapon = localplayer->clean_weapon;
+	static std::vector<WeaponIds> valid_weapons = { weapon_ssg08, weapon_awp, weapon_g3sg1, weapon_scar20 };
 
-	if (weapon.empty())
-		return;
-
-	static std::vector<std::string> valid_weapons = { "ssg08", "awp", "g3sg1", "scar20"};
-
-	if (std::find(valid_weapons.begin(), valid_weapons.end(), weapon) == valid_weapons.end())
+	if (std::find(valid_weapons.begin(), valid_weapons.end(), weapon.item_index) == valid_weapons.end())
 		return;
 
 	ImVec2 center(
@@ -316,8 +482,8 @@ void Esp::RenderCrosshair()
 		ImVec2(center.x - size, center.y),
 		ImVec2(center.x + size + 1, center.y),
 		IM_COL32(255, 255, 255, 255),
-		thickness);
 
+		thickness);
 	d->AddLine(
 		ImVec2(center.x, center.y - size),
 		ImVec2(center.x, center.y + size + 1),
@@ -327,111 +493,70 @@ void Esp::RenderCrosshair()
 
 void Esp::RenderAimbotFov()
 {
-	if (!cfg::aimbot::draw_fov)
-		return;
-
-	if (!cfg::aimbot::enabled)
+	if (!cfg::aimbot::draw_fov || !cfg::aimbot::enabled)
 		return;
 
 	ImVec2 center(
 		floorf(io.DisplaySize.x * 0.5f),
 		floorf(io.DisplaySize.y * 0.5f));
 
-	// Convert FOV angle to screen radius
-	// Using a simple approximation: radius = FOV * screen_height / 90
-	// This gives reasonable results for typical FOV values
+	// Convert the configured FOV angle into an approximate screen radius
 	float radius = cfg::aimbot::fov * io.DisplaySize.y / 90.0f;
 
-	// Draw circle with semi-transparent color
 	d->AddCircle(
 		center,
 		radius,
-		IM_COL32(255, 255, 255, 100),  // White with transparency
-		64,  // Number of segments (higher = smoother)
-		1.5f); // Thickness
+		IM_COL32(255, 255, 255, 100),
+		64,
+		1.5f);
 }
 
-void Esp::RenderBomb(Bomb bomb) {
-	if (!bomb.is_planted)
+void Esp::RenderPlayerTracers(Player source, Player player, bool mate) {
+	if (!cfg::esp::tracers)
 		return;
 
-	if (!bomb.pos.length())
-		return;
+	Vec2_t screenPos;
+	bool projected = matrix.wts(player.pos, io.DisplaySize, screenPos, false);
 
-	auto marker = bomb.pos + Vec3_t(0, 0, 20);
+	if (!projected)
+	{
+		Vec3_t camPos = source.pos;
+		Vec3_t dir = player.pos - camPos;
 
-	Vec2_t pos;
-	if (!matrix.wts(bomb.pos, io.DisplaySize, pos))
-		return;
+		// projection for off screen players
+		Vec3_t viewDir;
+		viewDir.x = matrix[0][0] * dir.x + matrix[0][1] * dir.y + matrix[0][2] * dir.z;
+		viewDir.y = matrix[1][0] * dir.x + matrix[1][1] * dir.y + matrix[1][2] * dir.z;
+		viewDir.z = matrix[2][0] * dir.x + matrix[2][1] * dir.y + matrix[2][2] * dir.z;
 
-	if (!localplayer)
-		return;
+		if (viewDir.z > 0.0f)
+		{
+			viewDir.x = -viewDir.x;
+			viewDir.y = -viewDir.y;
+		}
 
-	auto distance = bomb.pos.dist_to(localplayer->pos);
+		// normalize
+		float len = sqrt(viewDir.x * viewDir.x + viewDir.y * viewDir.y);
+		if (len > 0.001f)
+		{
+			viewDir.x /= len;
+			viewDir.y /= len;
+		}
 
-	float width = 20.f;
-	float height = 20.f;
-	float rounding = 10.f;
+		screenPos.x = io.DisplaySize.x * 0.5f + viewDir.x * io.DisplaySize.x * 0.5f;
+		screenPos.y = io.DisplaySize.y * 0.5f - viewDir.y * io.DisplaySize.y * 0.5f;
 
-	static int margin = 10;
-	static int padding = 10;
-
-	//auto distance_str = std::format("{}pt", (int)distance);
-	auto duration_str = std::format("{}s", bomb.time_left);
-	auto bombsite_str = std::string(bomb.site == BombSite::A ? "A" : "B");
-
-	std::string bomb_string = std::format("Planted {} - {}", bombsite_str, duration_str);
-
-	auto text_size = ImGui::CalcTextSize(bomb_string.data());
-	width = text_size.x; height = text_size.y;
-
-	d->AddRectFilled(
-		ImVec2(pos.x + margin - padding, pos.y - height - 20 - margin - padding),
-		ImVec2(pos.x + width + margin + padding, pos.y - 20 - margin + padding),
-		IM_COL32(0, 0, 0, 200),
-		rounding
-	);
-
-	d->AddRect(
-		ImVec2(pos.x + margin - padding, pos.y - height - 20 - margin - padding),
-		ImVec2(pos.x + width + margin + padding, pos.y - 20 - margin + padding),
-		IM_COL32(100, 100, 100, 200),
-		rounding
-	);
-
-	d->AddText(
-		ImVec2(pos.x + margin, pos.y - height - 20 - margin),
-		IM_COL32(255, 255, 255, 255),
-		bomb_string.data()
-	);
-}
-void Esp::RenderArucoMarkers(Player player, bool mate, int player_index) {
-	if (player.bone_list.empty())
-		return;
-
-	auto head_bone = player.bone_list[bone_index::head];
-
-	Vec2_t head;
-	if (!matrix.wts(head_bone.pos, io.DisplaySize, head))
-		return;
-
-	// Assign a random marker to each player based on their index, ensuring consistency
-	std::mt19937 gen(player_index);
-	std::uniform_int_distribution<> distrib(0, ArucoManager::GetMarkerCount() - 1);
-	int marker_index = distrib(gen);
-
-	ImTextureID marker = ArucoManager::GetMarker(marker_index);
-	if (marker == 0)
-		return; // Marker not loaded
-
-	// Draw the marker at head position
-	float size = 32.0f; // Marker size
-	ImVec2 p_min(head.x - size/2.0f, head.y - size/2.0f);
-	ImVec2 p_max(head.x + size/2.0f, head.y + size/2.0f);
-
-	// Only draw if the feature is enabled
-	if (cfg::esp::aruco_markers) {
-		// Draw actual ArUco marker texture
-		ImGui::GetBackgroundDrawList()->AddImage(marker, p_min, p_max);
+		float margin = 10.f;
+		screenPos.x = std::clamp(screenPos.x, margin, io.DisplaySize.x - margin);
+		screenPos.y = std::clamp(screenPos.y, margin, io.DisplaySize.y - margin);
 	}
+
+	auto color = mate ? cfg::esp::colors::tracer_team : cfg::esp::colors::tracer_enemy;
+
+	d->AddLine(
+		Vec2_t(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+		screenPos,
+		ImColor(color),
+		1.0f
+	);
 }

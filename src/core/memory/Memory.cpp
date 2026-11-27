@@ -1,4 +1,4 @@
-#include "memory.hpp"
+#include "Memory.hpp"
 #include <tlhelp32.h>
 
 uint32_t pProcess::FindProcessIdByProcessName(const char* ProcessName)
@@ -67,8 +67,11 @@ HWND pProcess::GetWindowHandleFromProcessId(DWORD ProcessId) {
 		MODULEINFO module_info;
 		DWORD _;
 
+		// PROCESS_VM_WRITE is always required: the gameplay features (aimbot, bhop,
+		// anti-flash) write to game memory, not just in debug builds.
 		handle_ = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION |
-                                PROCESS_VM_READ | PROCESS_VM_WRITE, FALSE, pid_);
+                                PROCESS_VM_READ | PROCESS_VM_WRITE
+								, FALSE, pid_);
 
 		if (!handle_)
 			return false;

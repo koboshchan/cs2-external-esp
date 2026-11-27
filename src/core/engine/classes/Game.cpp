@@ -4,19 +4,19 @@
 #include "core/offsets/Dumper.hpp"
 
 bool Game::Update() {
-
 	if (!Engine::GetProcess())
-		return false;
-
+		return false;	
+	
 	if (!UpdateMatrix()) {
 		LOGF(FATAL, "Failed to update view matrix");
 		return false;
 	}
 
-	if (!UpdateEntityList()) {
-		LOGF(FATAL, "Failed to update entity list");
-		return false;
-	}
+	// No need to be updated along with the view matrix
+	//if (!UpdateEntityList()) {
+	//	LOGF(FATAL, "Failed to update entity list");
+	//	return false;
+	//}
 
 	return true;
 }

@@ -1,6 +1,0 @@
-opencv-python
-numpy
-pyautogui
-keyboard
-mss
-pywin32

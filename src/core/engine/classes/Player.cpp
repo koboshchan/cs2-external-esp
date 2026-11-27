@@ -1,7 +1,10 @@
 #include "Player.hpp"
 
+#include "Weapon.hpp"
 #include "core/engine/Engine.hpp"
 #include "core/offsets/Dumper.hpp"
+
+#include "core/engine/classes/ObserverServices.hpp"
 
 bool Player::Update() {
 	if (!Engine::GetProcess())
@@ -15,7 +18,7 @@ bool Player::Update() {
 	if (!GetPawn()) {
 		//LOGF(WARNING, "Failed to GET pawn for entity index({})", index);
 		return false;
-	}	
+	}
 
 	if (!UpdateController()) {
 		//LOGF(WARNING, "Failed to UPDATE controller for entity index({})", index);
@@ -34,7 +37,7 @@ bool Player::GetController() {
 	auto p = Engine::GetProcess();
 	auto client = Engine::GetClient();
 
-	this->controller = p->read<DWORD64>(le + (index + 1) * 0x70); // before was 0x78
+	this->controller = p->read<DWORD64>(list_entry + (index + 1) * 0x70); // before was 0x78
 
 	return this->controller != 0;
 }
@@ -43,20 +46,14 @@ bool Player::GetPawn() {
 	auto p = Engine::GetProcess();
 	auto client = Engine::GetClient();
 
-	DWORD64 entity_pawn_list_entry = 0;
-	DWORD64 entity_pawn_address = 0;
-
-	entity_pawn_address = p->read<DWORD64>(controller + offsets::controller::m_hPawn);
+	auto entity_pawn_address = p->read<uintptr_t>(controller + offsets::controller::m_hPawn);
 
 	if (!entity_pawn_address)
 		return false;
 
-	entity_pawn_list_entry = p->read<DWORD64>(client.base + offsets::entityList);
+	this->pawn_controller_addr = entity_pawn_address;
 
-	if (!entity_pawn_list_entry) 
-		return false;
-
-	entity_pawn_list_entry = p->read<uintptr_t>(entity_pawn_list_entry + 0x10 + 0x8 * ((entity_pawn_address & 0x7FFF) >> 9));
+	auto entity_pawn_list_entry = p->read<uintptr_t>(this->entity_list + 0x10 + 0x8 * ((entity_pawn_address & 0x7FFF) >> 9));
 
 	if (!entity_pawn_list_entry)
 		return false;
@@ -93,21 +90,26 @@ bool Player::UpdatePawn() {
 	this->health = p->read<int>(pawn + offsets::pawn::m_iHealth);
 	this->alive = health != 0;
 
-	if (this->health > 255 || this->health < 0)
-		LOGF(FATAL, 
-			"Health seems to have a random value (over 100 or under 0) with a value of ({}). Game has probably updated pawn structure", 
-			this->health
-		);
+	UpdateObserverServices();
 
 	if (!alive) // No need to continue 
 		return true;
+
+	this->team = p->read<uint8_t>(pawn + offsets::pawn::m_iTeamNum);
+	if (this->team < 2 || this->team > 3) {
+		LOGF(FATAL,
+			"Invalid player team ({}) for entity index({}) (under 2 or over 3); game structures may have changed",
+			this->team, index
+		);
+		return false;
+	}
 
 	this->pos = p->read<Vec3_t>(pawn + offsets::pawn::m_vOldOrigin);
 
 	if (this->pos.zero())
 		return false;
 
-	this->team = p->read<uint8_t>(pawn + offsets::pawn::m_iTeamNum);
+	this->vel = p->read<Vec3_t>(pawn + offsets::pawn::m_vecAbsVelocity);
 
 	this->armor = p->read<int>(pawn + offsets::pawn::m_ArmorValue);
 	this->defusing = p->read<bool>(pawn + offsets::pawn::m_bIsDefusing);
@@ -115,9 +117,13 @@ bool Player::UpdatePawn() {
 	this->flashed = p->read<float>(pawn + offsets::pawn::m_flFlashOverlayAlpha) > 0;
 	this->scoped = p->read<bool>(pawn + offsets::pawn::m_bIsScoped);
 	this->shots_fired = p->read<int>(pawn + offsets::pawn::m_iShotsFired);
-	this->aim_punch = p->read<Vec3_t>(pawn + offsets::pawn::m_aimPunchAngle);
 	this->eye_angles = p->read<Vec2_t>(pawn + offsets::pawn::m_angEyeAngles);
 	this->view_offset = p->read<Vec3_t>(pawn + offsets::pawn::m_vecViewOffset);
+
+	// View punch now lives in CPlayer_CameraServices (m_aimPunchAngle no longer exists)
+	auto camera_services = p->read<uintptr_t>(pawn + offsets::pawn::m_pCameraServices);
+	if (camera_services)
+		this->aim_punch = p->read<Vec3_t>(camera_services + offsets::pawn::m_vecCsViewPunchAngle);
 
 	if (!UpdateSkeleton()) {
 		LOGF(FATAL, "Failed to update skeleton");
@@ -129,6 +135,7 @@ bool Player::UpdatePawn() {
 		//LOGF(FATAL, "Failed to update weapon"); // too verbose
 		return false;
 	}
+
 
 	return true;
 }
@@ -149,7 +156,7 @@ bool Player::UpdateSkeleton() {
 	if (!p->read_raw(bone_array, bones, sizeof(bones)))
 		return false;
 
-	for (int i = 0; i < 30; i++) 
+	for (int i = 0; i < 30; i++)
 		this->bone_list.push_back({ bones[i].pos });
 
 	return true;
@@ -158,28 +165,24 @@ bool Player::UpdateSkeleton() {
 bool Player::UpdateWeapon() {
 	auto p = Engine::GetProcess();
 
-	auto clipping_weapon = p->read<uintptr_t>(this->pawn + offsets::pawn::m_pClippingWeapon);
+	auto weapon_services = p->read<uintptr_t>(this->pawn + offsets::pawn::m_pWeaponServices);
 
-	if (!clipping_weapon)
+	if (!weapon_services)
 		return false;
 
-	clipping_weapon = p->read<uintptr_t>(clipping_weapon + 0x10);
+	auto active_weapon_index = p->read<int>(weapon_services + offsets::pawn::m_hActiveWeapon);
 
-	if (!clipping_weapon)
+	if (!active_weapon_index)
 		return false;
 
-	clipping_weapon = p->read<uintptr_t>(clipping_weapon + 0x20);
+	auto weapon = Weapon(this->entity_list, active_weapon_index);
 
-	if (!clipping_weapon)
+	if (!weapon.Update())
 		return false;
 
-	if (!p->read_raw(clipping_weapon, this->weapon, sizeof(this->weapon)))
-		return false;
-
-	this->clean_weapon = this->weapon;
-
-	if (this->clean_weapon.compare(0, 7, "weapon_") == 0)
-		this->clean_weapon = this->clean_weapon.substr(7, this->clean_weapon.length());
+	this->weapon = weapon;
+	this->ammo = weapon.ammo;
+	this->is_reloading = weapon.is_reloading;
 
 	return true;
 }
@@ -214,4 +217,18 @@ bool Player::GetBounds(view_matrix_t matrix, Vec2_t size, std::pair<Vec2_t, Vec2
 	bounds = { top, origin };
 
 	return pt1 || pt2;
+}
+
+// Does not update if match is started
+bool Player::UpdateObserverServices() {
+	auto p = Engine::GetProcess();
+	if (!p) 
+		return false;
+
+	DWORD64 address = p->read<DWORD64>(this->pawn + offsets::pawn::m_pObserverServices);
+	if (!address) 
+		return false;
+
+	this->observer_services.SetAddress(address);
+	return this->observer_services.Update();
 }

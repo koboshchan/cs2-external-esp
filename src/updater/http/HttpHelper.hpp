@@ -1,6 +1,9 @@
 #pragma once
 
+#ifndef CURL_STATICLIB
 #define CURL_STATICLIB
+#endif
+
 #include <curl/curl.h>
 #pragma comment(lib, "libcurl.lib")
 #pragma comment(lib, "zlib.lib")
@@ -20,6 +23,8 @@ public:
     static int Get(std::string url, json& response);
     static int Post(std::string url, json body, json& response);
 private:
+    static constexpr long REQUEST_TIMEOUT = 15;
+
     HttpHelper() {};
 
     static HttpHelper& GetInstance()

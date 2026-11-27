@@ -1,15 +1,12 @@
-// stb_image implementation - must be defined in exactly one .cpp file
-
-#include "../../external/stb/stb_image.h"
-
 #include "Renderer.hpp"
 #include "window/Window.hpp"
 
 #include "core/engine/Engine.hpp"
 #include "gui/frontend/esp/Esp.hpp"
 #include "gui/frontend/menu/Menu.hpp"
-#include "gui/frontend/overlays/Overlays.hpp"
-#include "gui/frontend/aruco/ArucoManager.hpp"
+#include "gui\frontend\overlays\Overlays.hpp"
+#include "core\scripting\Scripting.hpp"
+#include "gui/frontend/theme/Theme.hpp"
 
 bool Renderer::Init() {
     return GetInstance().InitImpl();
@@ -27,6 +24,10 @@ bool Renderer::IsOpen() {
     return GetInstance().isOpen;
 }
 
+bool Renderer::IsFocused() {
+    return GetInstance().isFocused.load();
+}
+
 bool Renderer::InitImpl() {
     if (!Window::SpawnWindow()) {
         LOGF(FATAL, "Failed to create window");
@@ -38,17 +39,15 @@ bool Renderer::InitImpl() {
         return false;
     }
 
-	if (!Window::CreateImGui()) {
-		LOGF(FATAL, "Failed to create ImGui");
-		return false;
-	}
+    if (!Window::CreateImGui()) {
+        LOGF(FATAL, "Failed to create ImGui");
+        return false;
+    }
 
-	// Initialize ArUco manager with DirectX device
-	ArucoManager::Init(Window::device);
-
-	Menu::Init();
-	Esp::Init();
-	Overlays::Init();
+    Menu::Init();
+    Esp::Init();
+    Overlays::Init();
+    scripting::Scripting::Get().Init();
 
     // Focus the game
     SetForegroundWindow(Engine::GetProcess()->hwnd_);
@@ -91,6 +90,8 @@ void Renderer::ThreadImpl() {
 }
 
 void Renderer::Render() {
+    theme::ThemeManager::Get().FlushPending();
+
     Window::StartRender();
 
     Esp::Render();
@@ -104,6 +105,7 @@ void Renderer::Render() {
 
 bool Renderer::HandleState() {
     isRunning = Window::shouldRun; // From the window event handler
+    scripting::Scripting::Get().Update();
 
     static bool was_holding = false;
 
@@ -128,6 +130,7 @@ bool Renderer::HandleState() {
         LOGF(VERBOSE, "Captured global VK_INSERT or VK_RSHIFT, toggling menu state to {}", this->isOpen);
 
         // Not the best way, but wont bother the user
+        // As far as i know, no one has complained about the config saving system :D
         std::thread(Config::Write).detach(); // Not needed, but just in case
     }
 
@@ -153,12 +156,14 @@ bool Renderer::HandleWindowOrder() {
     this->isFocused = (foreground == Window::hwnd || foreground == p->hwnd_);
 
     if (!this->isFocused && overlay_visible) {
+        LOGF(VERBOSE, "Hiding overlay window as the game its not focused");
         ShowWindow(Window::hwnd, SW_HIDE);
         overlay_visible = false;
         return true;
     }
 
     if (!overlay_visible && this->isFocused) {  
+        LOGF(VERBOSE, "Showing overlay window as the game is focused");
         ShowWindow(Window::hwnd, SW_SHOW);
         overlay_visible = true;
         return true;

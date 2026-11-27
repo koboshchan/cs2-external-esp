@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 class Renderer {
 public:
     ~Renderer() = default;
@@ -13,6 +15,7 @@ public:
     static void Thread();
 
     static bool IsOpen();
+    static bool IsFocused();
 private:
     Renderer() {};
 
@@ -33,5 +36,5 @@ private:
     bool isRunning = true;
     bool isOpen = false;
 
-    bool isFocused = false;
+    std::atomic<bool> isFocused{false};
 };
