@@ -8,6 +8,7 @@
 #include <shellapi.h>
 
 #include "net/host_session.hpp"
+#include "net/endpoint.hpp"
 
 #pragma comment(lib, "Shell32.lib")
 
@@ -345,8 +346,7 @@ void Menu::RenderImpl() {
 						ImGui::Spacing();
 						ImGui::Text("Server");
 						ImGui::SetNextItemWidth(320.f);
-						if (ImGui::InputText("##server", server_buf, sizeof(server_buf), ImGuiInputTextFlags_EnterReturnsTrue))
-							cfg::remote::url = server_buf;
+						ImGui::InputText("##server", server_buf, sizeof(server_buf));
 						ImGui::SetItemTooltip(
 							"Default: wss://cs2.kjt.lol/ws\n"
 							"Override with the CS2ESPSERVER environment variable."
@@ -364,12 +364,30 @@ void Menu::RenderImpl() {
 
 						if (ImGui::Button("Host", ImVec2(140, 32)))
 						{
+							const std::string server = net::ResolveServerUrl(server_buf);
+							if (server != net::HostSession::ServerUrl())
+							{
+								cfg::remote::room.clear();
+								cfg::remote::token.clear();
+								cfg::remote::viewer_key.clear();
+								cfg::remote::url = server;
+							}
 							std::string err;
 							if (!net::HostSession::Start(&err))
 								LOGF(WARNING, "[net] could not start hosting: {}", err);
 						}
 						ImGui::SameLine();
 						ImGui::TextDisabled("creates a room and starts publishing");
+						if (!cfg::remote::room.empty())
+						{
+							if (ImGui::Button("Reset room"))
+							{
+								cfg::remote::room.clear();
+								cfg::remote::token.clear();
+								cfg::remote::viewer_key.clear();
+							}
+							ImGui::SetItemTooltip("Clear expired room credentials before starting a new host session.");
+						}
 
 						if (!status.error.empty())
 						{

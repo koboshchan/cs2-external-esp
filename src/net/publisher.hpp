@@ -57,6 +57,8 @@ namespace net
 
 		uint32_t seq_ = 0;
 		std::atomic<bool> connected_{ false };
+		std::atomic<bool> authenticated_{ false };
+		std::atomic<bool> rejected_{ false };
 		std::atomic<uint64_t> frames_sent_{ 0 };
 		std::atomic<uint64_t> bytes_sent_{ 0 };
 		std::atomic<uint64_t> dropped_{ 0 };

@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"image/color"
+	"math"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -28,37 +29,40 @@ var (
 	gdi32    = windows.NewLazySystemDLL("gdi32.dll")
 	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
-	pRegisterClassExW        = user32.NewProc("RegisterClassExW")
-	pCreateWindowExW         = user32.NewProc("CreateWindowExW")
-	pDefWindowProcW          = user32.NewProc("DefWindowProcW")
-	pDestroyWindow           = user32.NewProc("DestroyWindow")
-	pPeekMessageW            = user32.NewProc("PeekMessageW")
-	pTranslateMessage        = user32.NewProc("TranslateMessage")
-	pDispatchMessageW        = user32.NewProc("DispatchMessageW")
-	pUpdateLayeredWindow     = user32.NewProc("UpdateLayeredWindow")
-	pGetDC                   = user32.NewProc("GetDC")
-	pReleaseDC               = user32.NewProc("ReleaseDC")
-	pGetClientRect           = user32.NewProc("GetClientRect")
-	pClientToScreen          = user32.NewProc("ClientToScreen")
-	pFindWindowW             = user32.NewProc("FindWindowW")
-	pSetWindowPos            = user32.NewProc("SetWindowPos")
-	pShowWindow              = user32.NewProc("ShowWindow")
-	pGetSystemMetrics        = user32.NewProc("GetSystemMetrics")
-	pGetDesktopWindow        = user32.NewProc("GetDesktopWindow")
-	pRegisterHotKey          = user32.NewProc("RegisterHotKey")
-	pUnregisterHotKey        = user32.NewProc("UnregisterHotKey")
-	pSetProcessDPIAware      = user32.NewProc("SetProcessDPIAware")
-	pGetModuleHandleW        = kernel32.NewProc("GetModuleHandleW")
+	pRegisterClassExW              = user32.NewProc("RegisterClassExW")
+	pCreateWindowExW               = user32.NewProc("CreateWindowExW")
+	pDefWindowProcW                = user32.NewProc("DefWindowProcW")
+	pDestroyWindow                 = user32.NewProc("DestroyWindow")
+	pPeekMessageW                  = user32.NewProc("PeekMessageW")
+	pTranslateMessage              = user32.NewProc("TranslateMessage")
+	pDispatchMessageW              = user32.NewProc("DispatchMessageW")
+	pUpdateLayeredWindow           = user32.NewProc("UpdateLayeredWindow")
+	pGetDC                         = user32.NewProc("GetDC")
+	pReleaseDC                     = user32.NewProc("ReleaseDC")
+	pGetClientRect                 = user32.NewProc("GetClientRect")
+	pClientToScreen                = user32.NewProc("ClientToScreen")
+	pFindWindowW                   = user32.NewProc("FindWindowW")
+	pSetWindowPos                  = user32.NewProc("SetWindowPos")
+	pShowWindow                    = user32.NewProc("ShowWindow")
+	pGetSystemMetrics              = user32.NewProc("GetSystemMetrics")
+	pRegisterHotKey                = user32.NewProc("RegisterHotKey")
+	pUnregisterHotKey              = user32.NewProc("UnregisterHotKey")
+	pSetProcessDPIAware            = user32.NewProc("SetProcessDPIAware")
+	pSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
+	pInvalidateRect                = user32.NewProc("InvalidateRect")
+	pGetModuleHandleW              = kernel32.NewProc("GetModuleHandleW")
 
-	pCreateCompatibleDC = gdi32.NewProc("CreateCompatibleDC")
-	pCreateDIBSection   = gdi32.NewProc("CreateDIBSection")
-	pSelectObject       = gdi32.NewProc("SelectObject")
-	pDeleteObject       = gdi32.NewProc("DeleteObject")
-	pDeleteDC           = gdi32.NewProc("DeleteDC")
-	pCreateFontW        = gdi32.NewProc("CreateFontW")
-	pSetTextColor       = gdi32.NewProc("SetTextColor")
-	pSetBkMode          = gdi32.NewProc("SetBkMode")
-	pTextOutW           = gdi32.NewProc("TextOutW")
+	pCreateCompatibleDC    = gdi32.NewProc("CreateCompatibleDC")
+	pCreateDIBSection      = gdi32.NewProc("CreateDIBSection")
+	pSelectObject          = gdi32.NewProc("SelectObject")
+	pDeleteObject          = gdi32.NewProc("DeleteObject")
+	pDeleteDC              = gdi32.NewProc("DeleteDC")
+	pCreateFontW           = gdi32.NewProc("CreateFontW")
+	pSetTextColor          = gdi32.NewProc("SetTextColor")
+	pSetBkMode             = gdi32.NewProc("SetBkMode")
+	pTextOutW              = gdi32.NewProc("TextOutW")
+	pGetTextExtentPoint32W = gdi32.NewProc("GetTextExtentPoint32W")
+	pGdiFlush              = gdi32.NewProc("GdiFlush")
 )
 
 const (
@@ -92,12 +96,11 @@ const (
 	pmRemove  = 0x0001
 
 	swpNoActivate = 0x0010
-	swpShowWindow = 0x0040
 
-	smCxScreen = 0
-	smCyScreen = 1
-	smXVirtualScreen = 76
-	smYVirtualScreen = 77
+	smCxScreen        = 0
+	smCyScreen        = 1
+	smXVirtualScreen  = 76
+	smYVirtualScreen  = 77
 	smCxVirtualScreen = 78
 	smCyVirtualScreen = 79
 
@@ -168,11 +171,12 @@ type msg struct {
 }
 
 type overlayCanvas struct {
-	hwnd   uintptr
-	hdcMem uintptr
-	hbm    uintptr
-	oldObj uintptr
-	font   uintptr
+	hwnd    uintptr
+	hdcMem  uintptr
+	hbm     uintptr
+	oldObj  uintptr
+	oldFont uintptr
+	font    uintptr
 
 	bits   []byte
 	stride int32
@@ -187,10 +191,18 @@ type overlayCanvas struct {
 	dirtyMinX, dirtyMinY int32
 	dirtyMaxX, dirtyMaxY int32
 
-	target  rect
-	lastSet rect
-	forced  *rect
-	bind    uintptr
+	target          rect
+	forced          *rect
+	bind            uintptr
+	followGeForce   bool
+	aspectMode      int
+	topInset        float64
+	relay           *Relay
+	desktop         *virtualDesktopManager
+	lastWindowCheck time.Time
+	ready, shown    bool
+	opacity         uint8
+	presentFailed   bool
 }
 
 func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
@@ -205,12 +217,16 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 }
 
 func newOverlayCanvas(o options) (*overlayCanvas, error) {
-	pSetProcessDPIAware.Call()
+	c := &overlayCanvas{opacity: 255}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			c.Close()
+		}
+	}()
 
-	c := &overlayCanvas{}
-
-	// Virtual screen: covers every monitor, so "full screen" and windows on a
-	// secondary display both fit in the bitmap.
+	// Initial desktop bounds. The bitmap is allocated at the actual viewport
+	// size, including after monitor changes and stream window replacements.
 	vx, _, _ := pGetSystemMetrics.Call(smXVirtualScreen)
 	vy, _, _ := pGetSystemMetrics.Call(smYVirtualScreen)
 	sw, _, _ := pGetSystemMetrics.Call(smCxVirtualScreen)
@@ -234,6 +250,8 @@ func newOverlayCanvas(o options) (*overlayCanvas, error) {
 		lpfnWndProc:   syscall.NewCallback(wndProc),
 		hInstance:     instance,
 		lpszClassName: className,
+		hIcon:         applicationIcon(),
+		hIconSm:       applicationIcon(),
 	}
 
 	if r, _, callErr := pRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc))); r == 0 {
@@ -255,38 +273,12 @@ func newOverlayCanvas(o options) (*overlayCanvas, error) {
 	}
 	c.hwnd = hwnd
 
-	pShowWindow.Call(hwnd, swShowNoActivate)
-
 	screenDC, _, _ := pGetDC.Call(0)
 	c.hdcMem, _, _ = pCreateCompatibleDC.Call(screenDC)
 	pReleaseDC.Call(0, screenDC)
 	if c.hdcMem == 0 {
 		return nil, fmt.Errorf("CreateCompatibleDC failed")
 	}
-
-	var bi bitmapInfo
-	bi.bmiHeader.biSize = uint32(unsafe.Sizeof(bitmapInfoHeader{}))
-	bi.bmiHeader.biWidth = c.screenW
-	bi.bmiHeader.biHeight = -c.screenH // top-down
-	bi.bmiHeader.biPlanes = 1
-	bi.bmiHeader.biBitCount = 32
-	bi.bmiHeader.biCompression = biRGB
-
-	var bits unsafe.Pointer
-	hbm, _, callErr := pCreateDIBSection.Call(
-		c.hdcMem,
-		uintptr(unsafe.Pointer(&bi)),
-		dibRGBColors,
-		uintptr(unsafe.Pointer(&bits)),
-		0, 0,
-	)
-	if hbm == 0 || bits == nil {
-		return nil, fmt.Errorf("CreateDIBSection: %v", callErr)
-	}
-
-	c.hbm = hbm
-	c.oldObj, _, _ = pSelectObject.Call(c.hdcMem, hbm)
-	c.bits = unsafe.Slice((*byte)(bits), int(c.screenW*c.screenH*4))
 
 	fontName, _ := windows.UTF16PtrFromString("Consolas")
 	font, _, _ := pCreateFontW.Call(
@@ -299,7 +291,7 @@ func newOverlayCanvas(o options) (*overlayCanvas, error) {
 	)
 	c.font = font
 	if font != 0 {
-		pSelectObject.Call(c.hdcMem, font)
+		c.oldFont, _, _ = pSelectObject.Call(c.hdcMem, font)
 	}
 	pSetBkMode.Call(c.hdcMem, transparentBk)
 
@@ -309,17 +301,25 @@ func newOverlayCanvas(o options) (*overlayCanvas, error) {
 		}
 	}
 
-	c.target = c.gameRect()
-	c.lastSet = rect{-1, -1, -1, -1}
-
+	succeeded = true
 	return c, nil
 }
 
 func (c *overlayCanvas) Opaque() bool { return false }
 
-func (c *overlayCanvas) Show() { pShowWindow.Call(c.hwnd, swShowNoActivate) }
+func (c *overlayCanvas) Show() {
+	if !c.shown {
+		pShowWindow.Call(c.hwnd, swShowNoActivate)
+		c.shown = true
+	}
+}
 
-func (c *overlayCanvas) Hide() { pShowWindow.Call(c.hwnd, swHide) }
+func (c *overlayCanvas) Hide() {
+	if c.shown {
+		pShowWindow.Call(c.hwnd, swHide)
+		c.shown = false
+	}
+}
 
 func (c *overlayCanvas) Close() {
 	if c.hwnd != 0 {
@@ -327,6 +327,9 @@ func (c *overlayCanvas) Close() {
 		c.hwnd = 0
 	}
 	if c.font != 0 {
+		if c.oldFont != 0 {
+			pSelectObject.Call(c.hdcMem, c.oldFont)
+		}
 		pDeleteObject.Call(c.font)
 		c.font = 0
 	}
@@ -342,33 +345,80 @@ func (c *overlayCanvas) Close() {
 	}
 }
 
-func (c *overlayCanvas) Begin() (float32, float32) {
-	c.target = c.gameRect()
-
-	w := c.target.right - c.target.left
-	h := c.target.bottom - c.target.top
+func (c *overlayCanvas) ensureSurface(w, h int32) bool {
+	if w == c.width && h == c.height && c.hbm != 0 {
+		return true
+	}
 	if w <= 0 || h <= 0 {
-		w, h = c.screenW, c.screenH
-		c.target = rect{0, 0, w, h}
+		return false
 	}
-	if w > c.screenW {
-		w = c.screenW
+	var bi bitmapInfo
+	bi.bmiHeader.biSize = uint32(unsafe.Sizeof(bitmapInfoHeader{}))
+	bi.bmiHeader.biWidth, bi.bmiHeader.biHeight = w, -h
+	bi.bmiHeader.biPlanes, bi.bmiHeader.biBitCount = 1, 32
+	bi.bmiHeader.biCompression = biRGB
+	var bits unsafe.Pointer
+	bitmap, _, _ := pCreateDIBSection.Call(c.hdcMem, uintptr(unsafe.Pointer(&bi)),
+		dibRGBColors, uintptr(unsafe.Pointer(&bits)), 0, 0)
+	if bitmap == 0 || bits == nil {
+		if bitmap != 0 {
+			pDeleteObject.Call(bitmap)
+		}
+		return false
 	}
-	if h > c.screenH {
-		h = c.screenH
+	previous, _, _ := pSelectObject.Call(c.hdcMem, bitmap)
+	if previous == 0 || previous == ^uintptr(0) {
+		pDeleteObject.Call(bitmap)
+		return false
 	}
+	if c.oldObj == 0 {
+		c.oldObj = previous
+	}
+	if c.hbm != 0 {
+		pDeleteObject.Call(c.hbm)
+	}
+	c.hbm = bitmap
+	c.bits = unsafe.Slice((*byte)(bits), int(w)*int(h)*4)
+	c.width, c.height, c.stride = w, h, w*4
+	return true
+}
 
-	c.width, c.height = w, h
-	c.stride = w * 4
-
-	if n := int(w * h * 4); n > 0 && n <= len(c.bits) {
-		clear(c.bits[:n])
+func (c *overlayCanvas) Begin() (float32, float32) {
+	c.ready = true
+	if c.followGeForce {
+		if time.Since(c.lastWindowCheck) >= 250*time.Millisecond {
+			c.bind = findGeForceWindow()
+			c.desktop.Follow(c.bind, c.hwnd)
+			c.lastWindowCheck = time.Now()
+		}
+		target, valid := clientScreenRect(c.bind)
+		c.ready = valid && windowIsDisplayable(c.bind) && geForceForeground(c.bind)
+		if c.ready {
+			left, top := float64(target.left), float64(target.top)
+			width, height := float64(target.right-target.left), float64(target.bottom-target.top)
+			inset := min(c.topInset, max(0, height-1))
+			top, height = top+inset, height-inset
+			var frame *Frame
+			if c.relay != nil {
+				frame = c.relay.Snapshot().Frame
+			}
+			left, top, width, height = fitViewport(left, top, width, height, streamAspect(c.aspectMode, frame))
+			c.target = rect{int32(left), int32(top), int32(left + width), int32(top + height)}
+		}
+	} else {
+		c.target = c.gameRect()
 	}
-
+	if c.ready {
+		c.ready = c.ensureSurface(c.target.right-c.target.left, c.target.bottom-c.target.top)
+	}
+	if !c.ready {
+		c.Hide()
+		return float32(max(1, c.width)), float32(max(1, c.height))
+	}
+	clear(c.bits)
 	c.dirtyMinX, c.dirtyMinY = 1<<30, 1<<30
 	c.dirtyMaxX, c.dirtyMaxY = -1, -1
-
-	return float32(w), float32(h)
+	return float32(c.width), float32(c.height)
 }
 
 func (c *overlayCanvas) Clear() {
@@ -408,6 +458,9 @@ func (c *overlayCanvas) markDirty(x0, y0, x1, y1 int32) {
 }
 
 func (c *overlayCanvas) Rect(x, y, w, h float32, col color.RGBA) {
+	if !c.ready {
+		return
+	}
 	if col.A == 0 || w <= 0 || h <= 0 {
 		return
 	}
@@ -444,6 +497,14 @@ func (c *overlayCanvas) Rect(x, y, w, h float32, col color.RGBA) {
 }
 
 func (c *overlayCanvas) Line(x1, y1, x2, y2 float32, col color.RGBA) {
+	if !c.ready {
+		return
+	}
+	a, b, visible := clipViewportLine(x1, y1, x2, y2, float32(c.width), float32(c.height))
+	if !visible {
+		return
+	}
+	x1, y1, x2, y2 = a.X, a.Y, b.X, b.Y
 	ix1, iy1 := int32(x1), int32(y1)
 	ix2, iy2 := int32(x2), int32(y2)
 
@@ -488,6 +549,9 @@ func (c *overlayCanvas) pixel(x, y int32, col color.RGBA) {
 }
 
 func (c *overlayCanvas) Text(x, y float32, s string, col color.RGBA) {
+	if !c.ready {
+		return
+	}
 	if s == "" {
 		return
 	}
@@ -500,30 +564,31 @@ func (c *overlayCanvas) Text(x, y float32, s string, col color.RGBA) {
 	pSetTextColor.Call(c.hdcMem, uintptr(colorRef(col)))
 	pTextOutW.Call(c.hdcMem, uintptr(int32(x)), uintptr(int32(y)), uintptr(unsafe.Pointer(&utf16[0])), uintptr(len(utf16)-1))
 
-	w := int32(len(utf16)-1) * 8
-	c.markDirty(int32(x), int32(y), int32(x)+w, int32(y)+16)
+	extent := size{cx: int32(len(utf16)-1) * 16, cy: 24}
+	pGetTextExtentPoint32W.Call(c.hdcMem, uintptr(unsafe.Pointer(&utf16[0])), uintptr(len(utf16)-1), uintptr(unsafe.Pointer(&extent)))
+	c.markDirty(int32(x), int32(y), int32(x)+extent.cx, int32(y)+extent.cy)
 }
 
 func (c *overlayCanvas) Present() {
+	if !c.ready {
+		return
+	}
+	pGdiFlush.Call()
 	c.fixAlpha()
 
-	if c.target != c.lastSet {
-		pSetWindowPos.Call(
-			c.hwnd,
-			uintptr(^uintptr(0)), // HWND_TOPMOST
-			uintptr(c.target.left), uintptr(c.target.top),
-			uintptr(c.width), uintptr(c.height),
-			swpNoActivate|swpShowWindow,
-		)
-		c.lastSet = c.target
+	insertAfter := ^uintptr(0) // HWND_TOPMOST
+	if gControls != nil && gControls.visible {
+		insertAfter = gControls.hwnd
 	}
+	pSetWindowPos.Call(c.hwnd, insertAfter,
+		uintptr(c.target.left), uintptr(c.target.top), uintptr(c.width), uintptr(c.height), swpNoActivate)
 
 	dst := point{c.target.left, c.target.top}
 	src := point{0, 0}
 	sz := size{c.width, c.height}
-	blend := blendFunction{blendOp: acSrcOver, sourceConstantAlpha: 255, alphaFormat: acSrcAlpha}
+	blend := blendFunction{blendOp: acSrcOver, sourceConstantAlpha: c.opacity, alphaFormat: acSrcAlpha}
 
-	pUpdateLayeredWindow.Call(
+	ok, _, err := pUpdateLayeredWindow.Call(
 		c.hwnd,
 		0,
 		uintptr(unsafe.Pointer(&dst)),
@@ -534,8 +599,16 @@ func (c *overlayCanvas) Present() {
 		uintptr(unsafe.Pointer(&blend)),
 		ulwAlpha,
 	)
-
-	c.pump()
+	if ok == 0 {
+		c.Hide()
+		if !c.presentFailed {
+			fmt.Printf("UpdateLayeredWindow failed: %v\n", err)
+		}
+		c.presentFailed = true
+		return
+	}
+	c.presentFailed = false
+	c.Show()
 }
 
 // fixAlpha gives GDI-drawn pixels (text) an alpha derived from their
@@ -568,18 +641,6 @@ func (c *overlayCanvas) fixAlpha() {
 	}
 }
 
-func (c *overlayCanvas) pump() {
-	var m msg
-	for {
-		r, _, _ := pPeekMessageW.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0, pmRemove)
-		if r == 0 {
-			return
-		}
-		pTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
-		pDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
-	}
-}
-
 func (c *overlayCanvas) Bind(hwnd uintptr) {
 	c.bind = hwnd
 }
@@ -587,6 +648,9 @@ func (c *overlayCanvas) Bind(hwnd uintptr) {
 func (c *overlayCanvas) BoundWindow() uintptr { return c.bind }
 
 func clientScreenRect(hwnd uintptr) (rect, bool) {
+	if hwnd == 0 {
+		return rect{}, false
+	}
 	var cr rect
 	if r, _, _ := pGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&cr))); r == 0 {
 		return rect{}, false
@@ -613,6 +677,11 @@ func (c *overlayCanvas) gameRect() rect {
 
 	// bind == 0 means "entire screen".
 	if c.bind == 0 {
+		x, _, _ := pGetSystemMetrics.Call(smXVirtualScreen)
+		y, _, _ := pGetSystemMetrics.Call(smYVirtualScreen)
+		w, _, _ := pGetSystemMetrics.Call(smCxVirtualScreen)
+		h, _, _ := pGetSystemMetrics.Call(smCyVirtualScreen)
+		c.screenX, c.screenY, c.screenW, c.screenH = int32(x), int32(y), int32(w), int32(h)
 		return rect{c.screenX, c.screenY, c.screenX + c.screenW, c.screenY + c.screenH}
 	}
 
@@ -647,198 +716,225 @@ func findGameWindow() uintptr {
 	return 0
 }
 
-func runUI(ctx context.Context, o options) (*Relay, error) {
+func runUI(ctx context.Context, o options) (result *Relay, runErr error) {
+	defer func() {
+		if runErr != nil {
+			title, _ := windows.UTF16PtrFromString("CS2 Remote Viewer")
+			message, _ := windows.UTF16PtrFromString(runErr.Error())
+			user32.NewProc("MessageBoxW").Call(0, uintptr(unsafe.Pointer(message)), uintptr(unsafe.Pointer(title)), 0x10)
+		}
+	}()
+	if pSetProcessDpiAwarenessContext.Find() == nil {
+		pSetProcessDpiAwarenessContext.Call(^uintptr(3)) // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+	} else {
+		pSetProcessDPIAware.Call()
+	}
 	cw, err := newConnectWindow(o)
 	if err != nil {
 		return nil, err
 	}
-
-	var (
-		relay   *Relay
-		cancel  context.CancelFunc
-		canvas  *overlayCanvas
-		sc      *scene
-		started bool
-	)
-
+	defer cw.Close()
+	controls, err := newControlsWindow()
+	if err != nil {
+		return nil, err
+	}
+	defer controls.Close()
+	desktop := newVirtualDesktopManager()
+	defer desktop.Close()
+	cw.desktop, controls.desktop = desktop, desktop
+	controlsHint = "Ctrl+P = controls    F8 = next viewpoint    F9 = launcher    END = quit"
+	var relay *Relay
+	var cancel context.CancelFunc
+	var overlay *overlayCanvas
+	var sc *scene
+	started := false
 	defer func() {
 		if cancel != nil {
 			cancel()
 		}
-		if canvas != nil {
-			canvas.Close()
+		if overlay != nil {
+			overlay.Close()
 		}
-		cw.Close()
 	}()
 
-	startHost := func(server, room, key string) error {
+	startHost := func(server, room, key string) {
 		o.server = resolveServerURL(server)
-		o.room = room
-		o.key = key
+		o.room, o.key = strings.ToUpper(strings.TrimSpace(room)), strings.TrimSpace(key)
 		saveConfig(viewerConfig{Server: o.server, Room: o.room, Key: o.key, Me: o.me})
-
 		if cancel != nil {
 			cancel()
 		}
+		started = false
+		sc = nil
+		if overlay != nil {
+			overlay.Hide()
+		}
+		controls.SelectView("")
+		controls.RefreshPlayers(nil)
 		relay, cancel = startRelay(ctx, o)
-
+		cw.playerSig = ""
+		cw.playerIndices = nil
+		pSendMessageW.Call(cw.playerList, lbResetContent, 0, 0)
 		cw.RefreshWindows()
-		cw.SetStatus("Connected. Pick your player and the window to overlay.")
+		cw.SetStatus("正在连接中继并验证房间。")
+	}
+	startMapping := func(index int8, hwnd uintptr) error {
+		inset, err := strconv.ParseFloat(readWindowText(cw.topInsetEdit), 64)
+		if err != nil || inset < 0 || math.IsNaN(inset) || math.IsInf(inset, 0) {
+			return fmt.Errorf("顶部裁剪需要填写大于等于 0 的像素数")
+		}
+		if overlay == nil {
+			overlay, err = newOverlayCanvas(o)
+			if err != nil {
+				return err
+			}
+		}
+		aspect, _, _ := pSendMessageW.Call(cw.aspectCombo, cbGetCurSel, 0, 0)
+		overlay.Bind(hwnd)
+		overlay.followGeForce = cw.FollowGeForce()
+		overlay.aspectMode, overlay.topInset = int(aspect), inset
+		overlay.relay, overlay.desktop = relay, desktop
+		overlay.lastWindowCheck = time.Time{}
+		o.meIndex = int(index)
+		selectedPlayerIndex = index
+		sc = newScene(relay, o)
+		sc.useHostMatrix = overlay.followGeForce
+		frame := relay.Snapshot().Frame
+		controls.RefreshPlayers(frame)
+		viewKey := ""
+		if frame != nil {
+			if player := frame.PlayerByIndex(int(index)); player != nil {
+				viewKey = playerViewKey(player)
+			}
+		}
+		controls.SelectView(viewKey)
+		sc.viewKey = controls.viewKey
+		started = true
+		cw.Hide()
 		return nil
 	}
-
-	// Saved credentials connect right away; the launcher still lets you pick
-	// the player and the window.
 	if o.room != "" && o.key != "" {
-		_ = startHost(o.server, o.room, o.key)
+		startHost(o.server, o.room, o.key)
 	}
-
-	start := time.Now()
-	lastLog := time.Now()
-	lastStatus := time.Now()
-	lastStatusText := ""
-
-	for {
-		if ctx.Err() != nil || overlayQuit.Load() {
-			break
-		}
+	if cw.hotkeyWarning != "" {
+		setNativeText(controls.status, cw.hotkeyWarning)
+	}
+	start, lastLog, lastStatus := time.Now(), time.Now(), time.Time{}
+	lastRoster := time.Time{}
+	for ctx.Err() == nil && !overlayQuit.Load() {
 		if o.seconds > 0 && time.Since(start) > time.Duration(o.seconds)*time.Second {
 			break
 		}
-
 		cw.Pump()
-
+		controls.FlushSettings(false)
 		if cw.TakeConnect() {
 			server, room, key := cw.Values()
 			if room == "" || key == "" {
-				cw.SetStatus("Room code and viewer key are required.")
-			} else if err := startHost(server, room, key); err != nil {
-				cw.SetStatus("Connect failed: " + err.Error())
+				cw.SetStatus("请填写房间代码和 Viewer key。")
+			} else {
+				startHost(server, room, key)
 			}
 		}
-
-		if relay != nil && !started {
-			cw.RefreshPlayers(relay)
+		if relay != nil {
+			if !started {
+				cw.RefreshPlayers(relay)
+			}
+			if time.Since(lastRoster) >= 250*time.Millisecond {
+				controls.RefreshPlayers(relay.Snapshot().Frame)
+				lastRoster = time.Now()
+			}
 		}
-
 		if o.autostart && !started && relay != nil {
 			snap := relay.Snapshot()
-			if snap.Frame != nil && len(snap.Frame.Players) > 0 {
-				hwnd := findGameWindow()
-				if hwnd == 0 {
-					cw.RefreshWindows()
-					if len(cw.windowHandles) > 0 {
-						hwnd = cw.windowHandles[0]
-					}
+			if snap.Frame != nil && len(snap.Frame.Players) > 0 && snap.Status.Connected {
+				target := uintptr(0)
+				if !cw.FollowGeForce() {
+					target = findGameWindow()
 				}
-				if hwnd == 0 {
-					// Nothing enumerable (e.g. a service session): use the desktop.
-					hwnd, _, _ = pGetDesktopWindow.Call()
+				if err := startMapping(snap.Frame.Players[0].Index, target); err != nil {
+					cw.SetStatus(err.Error())
 				}
-				if hwnd != 0 {
-					index := snap.Frame.Players[0].Index
-					o.meIndex = int(index)
-
-					if canvas == nil {
-						if c, err := newOverlayCanvas(o); err == nil {
-							canvas = c
-						}
-					}
-					if canvas != nil {
-						canvas.Bind(hwnd)
-						sc = newScene(relay, o)
-						sc.selected = index
-						started = true
-						cw.Hide()
-						canvas.Show()
-					}
-				}
+				o.autostart = false
 			}
 		}
-
 		if relay != nil && !started && time.Since(lastStatus) > 500*time.Millisecond {
 			lastStatus = time.Now()
-			text := StatusText(relay.Snapshot(), len(cw.playerIndices))
-			if text != lastStatusText {
-				lastStatusText = text
-				fmt.Printf("status: %s\n", text)
-			}
-			cw.SetStatus(text)
+			cw.SetStatus(StatusText(relay.Snapshot(), len(cw.playerIndices)))
 		}
-
 		if o.pick >= 0 && relay != nil && !started && len(cw.playerIndices) > 0 {
 			cw.PickPlayer(o.pick)
 			o.pick = -1
 			cw.startRequested.Store(true)
 		}
-
 		if cw.TakeStart() {
 			index, hwnd, hasWindow := cw.Selection()
-			if !hasWindow {
-				cw.SetStatus("Pick the window the overlay should attach to.")
-			} else if relay == nil {
-				cw.SetStatus("Connect first.")
-			} else {
-				o.meIndex = int(index)
-
-				if canvas == nil {
-					c, err := newOverlayCanvas(o)
-					if err != nil {
-						fmt.Printf("overlay error: %v\n", err)
-						cw.SetStatus("Could not create the overlay: " + err.Error())
-						return relay, nil
-					}
-					canvas = c
+			switch {
+			case relay == nil:
+				cw.SetStatus("请先连接。")
+			case relay.Snapshot().Frame == nil || !relay.Snapshot().Status.Connected || len(cw.playerIndices) == 0:
+				cw.SetStatus("等待连接成功和最新玩家数据。")
+			case !cw.FollowGeForce() && !hasWindow:
+				cw.SetStatus("请选择覆盖窗口。")
+			default:
+				if err := startMapping(index, hwnd); err != nil {
+					cw.SetStatus(err.Error())
 				}
-
-				canvas.Bind(hwnd)
-				selectedPlayerIndex = index
-				sc = newScene(relay, o)
-				sc.selected = index
-
-				started = true
-				cw.Hide()
-				canvas.Show()
 			}
 		}
-
 		if overlayShowConnect.Swap(false) {
 			started = false
-			if canvas != nil {
-				canvas.Hide()
+			controls.Hide()
+			if overlay != nil {
+				overlay.Hide()
 			}
 			cw.RefreshWindows()
 			cw.Show()
 		}
-
-		// The bound window can close while we are attached.
-		if started && canvas != nil && canvas.BoundWindow() != 0 {
-			if ok, _, _ := pIsWindow.Call(canvas.BoundWindow()); ok == 0 {
+		if overlayShowControls.Swap(false) {
+			controls.Toggle()
+		}
+		if started && overlay != nil && !overlay.followGeForce && overlay.BoundWindow() != 0 {
+			if valid, _, _ := pIsWindow.Call(overlay.BoundWindow()); valid == 0 {
 				started = false
-				canvas.Hide()
+				overlay.Hide()
+				controls.Hide()
 				cw.RefreshWindows()
 				cw.Show()
-				cw.SetStatus("The overlaid window closed.")
+				cw.SetStatus("覆盖窗口已关闭。")
 			}
 		}
-
-		if started && canvas != nil && !cw.Visible() {
-			sc.update()
-			sc.draw(canvas)
-			canvas.Present()
-
+		if started && overlay != nil && sc != nil {
+			if consumeNextPlayer() {
+				if frame := relay.Snapshot().Frame; frame != nil {
+					_, current, _ := sc.cameraForFrame(frame, 16.0/9)
+					if next := frame.PlayerByIndex(int(nextPlayerIndex(frame.Players, current))); next != nil {
+						controls.SelectView(playerViewKey(next))
+					}
+				}
+			}
+			sc.viewKey = controls.viewKey
+			sc.delayMS = controls.syncSettings.DelayMS
+			sc.display = controls.Display()
+			sc.palette = controls.appearance.palette()
+			overlay.opacity = uint8(controls.appearance.OverlayOpacity * 255 / 100)
+			if controls.overlayHidden {
+				overlay.ready = false
+				overlay.Hide()
+			} else {
+				sc.draw(overlay)
+				overlay.Present()
+			}
 			if time.Since(lastLog) > 2*time.Second {
 				lastLog = time.Now()
 				snap := relay.Snapshot()
-				fmt.Printf("connected=%v host=%v frames=%d bytes=%d gaps=%d age=%s rect=%dx%d\n",
-					snap.Status.Connected, snap.Status.HostOnline, snap.Frames, snap.Bytes, snap.Gaps,
-					ageOf(snap.FrameAt), canvas.width, canvas.height)
+				fmt.Printf("connected=%v host=%v frames=%d age=%s target=%v rect=%dx%d\n",
+					snap.Status.Connected, snap.Status.HostOnline, snap.Frames, ageOf(snap.FrameAt), overlay.ready, overlay.width, overlay.height)
 			}
+		} else {
+			consumeNextPlayer()
 		}
-
 		time.Sleep(16 * time.Millisecond)
 	}
-
 	return relay, nil
 }
 

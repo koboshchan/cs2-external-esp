@@ -424,3 +424,4 @@ FodyWeavers.xsd
 
 # Viewer build output
 viewer/dist/
+dist/

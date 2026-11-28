@@ -1,12 +1,12 @@
 #include "Scripting.hpp"
 #include "SolisScript.hpp"
-#include "core\engine\types\Types.hpp"
+#include "core/engine/types/Types.hpp"
 #include "config/Current.hpp"
 #include "core/scripting/hooks/PhysicalInput.hpp"
 #include "core/logger/LogHelper.hpp"
-#include "core\engine\Engine.hpp"
-#include "gui\frontend\menu\Menu.hpp"
-#include "gui\renderer\Renderer.hpp"
+#include "core/engine/Engine.hpp"
+#include "gui/frontend/menu/Menu.hpp"
+#include "gui/renderer/Renderer.hpp"
 #include "gui/frontend/theme/Theme.hpp"
 
 #ifdef _MSC_VER

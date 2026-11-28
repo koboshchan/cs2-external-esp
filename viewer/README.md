@@ -4,34 +4,69 @@ Standalone viewer for the remote ESP. It renders an overlay from a host's
 snapshots and **never opens a handle to the game** — no offsets, no memory
 reads, no injection.
 
-On Windows it is a real overlay: a layered, click-through, always-on-top
-window with per-pixel alpha, sized to the CS2 client area. On macOS it is a
-normal window (CS2 does not run there; that build is for previewing).
+On Windows it uses a layered, click-through, always-on-top window with
+per-pixel alpha. On macOS it uses a transparent AppKit overlay. Both platforms
+can follow the native GeForce NOW client or a manually selected window.
 
 The host is the C++ application (`cs2-external-esp.exe`, Host tab). This binary
 is the viewer.
 
-## Run (Windows)
+## Run (Windows, GeForce NOW viewer 0.6.3)
 
-Start it with no arguments. A launcher window opens:
+Build for Windows 10/11 x64 with `GOOS=windows GOARCH=amd64 CGO_ENABLED=0`.
+The native GeForce NOW application is the automatic overlay target.
 
-1. **Server / Room code / Viewer key** — paste the two values from the host's
-   Host tab (each field has a **Paste** button; `Ctrl+V` works too).
-2. **Connect**.
-3. **You are** — pick your own player from the live list.
-4. **Overlay window** — pick the window to attach to (press **Refresh** if the
-   game is not listed).
-5. **Start overlay**.
+1. Enter **Server**, **Room code** and **Viewer key** from the Windows host.
+2. Click **Connect**, choose the camera player, then **Start overlay**.
+3. Automatic GeForce NOW detection is enabled by default. The mapping session
+   waits while its target is missing, minimized or on another virtual desktop.
+4. **Ctrl+P** opens display controls. Choose the camera player in the persistent
+   list, toggle boxes/health/skeleton/names/teammates, set opacity and edit RGB colors.
+5. **F8** cycles camera players. **F9** restores the launcher. **End** exits.
 
-The overlay is click-through, always on top, and follows that window's client
-area. The camera is always the **host's**: what the host is facing is what you
-see, and nothing on the viewer side can change the view. `F9` returns to the launcher, `F8` cycles players, `END` quits.
+The minimized launcher remains available in the Windows taskbar. Restoring it
+returns to connection and target settings. Its **显示控制台** button provides
+access when a shortcut is occupied. Closing the launcher exits the viewer.
 
-Settings are saved, so later launches only need Connect → player → window →
-Start.
+Camera selection uses the chosen player's EyePos, EyeAngles and Fov from
+received snapshots. The selection follows SteamID across slot changes.
+Missing players retain a waiting selection until they return.
 
-> The game must be in **Fullscreen Windowed** (borderless). Exclusive
-> fullscreen cannot be overlaid.
+The overlay follows the target client rectangle and centered aspect-fit stream.
+Choose an explicit aspect ratio or top inset when the stream uses different
+cropping. Changes to target and ratio settings apply on **Start overlay**.
+Uncheck automatic targeting to use the manual window list and **Refresh**.
+
+Appearance is saved to `%APPDATA%\cs2-remote-viewer\appearance.json`.
+The existing connection settings continue to use `config.json` in that folder.
+Colors accept six-digit RGB values such as `#50A0FF`. Click **应用颜色** to apply.
+Opacity changes apply immediately and are saved after dragging pauses.
+The **隐藏映射 / 显示映射** button toggles the entire overlay. Controls remain
+available while the overlay is hidden. The toggle state lasts for the current run.
+**F6** is the default global overlay master shortcut. In the controls panel,
+click the **映射总开关键** field, press the desired key combination, and click
+**保存按键**. The binding is saved to `hotkeys.json` and restored on the next run.
+Occupied or reserved shortcuts show an error. Holding the shortcut toggles once.
+
+On macOS, open controls with **Command+P** and click the shortcut button beside
+**映射总开关键**. Press the desired combination to save it, or **Escape** to cancel.
+The macOS default is also **F6**, which may require **fn+F6** depending on keyboard
+settings. Its binding is stored in the app's preferences.
+
+The **数据同步延迟** slider buffers camera and bone snapshots together using host
+timestamps. Its range is 0–250 ms, with a 35 ms experimental default. Increasing
+the value adds display latency. A value of 0 displays the latest received frame.
+Windows saves this setting in `display-sync.json`; macOS uses the app preference
+`DisplaySyncDelayMS`. Actual GeForce NOW alignment needs gameplay verification.
+The protocol currently carries another player's EyePos, EyeAngles and Fov.
+Reproducing that player's full firing camera motion requires additional rendered
+camera data. Synthetic interpolation tests cover timing and projection behavior.
+
+Local Windows builds can be cross-compiled on macOS. GitHub verification runs
+viewer tests and builds natively on Windows x64 and macOS arm64, alongside relay
+and C++ protocol tests. Release packaging depends on these checks passing.
+Windows mouse interaction, global hotkeys, virtual desktops, multiple monitors
+and GeForce NOW fullscreen behavior still require gameplay runtime verification.
 
 ## Run (macOS)
 
@@ -39,8 +74,9 @@ Same flow, native AppKit controls:
 
 1. **Server / Room code / Viewer key** — `Cmd+V` pastes.
 2. **Connect**.
-3. **Hide player** — optional; hides one player from the overlay.
-4. **Overlay window** — pick any window (a stream, a video, anything).
+3. **Camera player** — choose the player's viewpoint to render.
+4. Automatic GeForce NOW targeting is enabled by default. Disable it to select
+   an overlay window manually.
 5. **Start overlay**.
 
 The overlay is a borderless, transparent, click-through window at
@@ -74,11 +110,11 @@ Controls:
 
 | | Windows overlay | macOS window |
 |---|---|---|
-| next player | `F8` | reopen the launcher |
+| next player | `F8` | select in the Command+P controls panel |
 | quit | `END` | CS2 menu bar item |
 
-On Windows the overlay follows the CS2 window automatically. If detection
-fails (windowed mode with an unusual class), pin it manually:
+On Windows the overlay targets GeForce NOW automatically. The launcher can
+switch to manual targeting, and `--rect` selects a fixed rectangle:
 
 ```sh
 ./cs2-remote-viewer --room ... --key ... --rect 0,0,1920,1080
@@ -122,8 +158,8 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o cs2-remote-viewer.exe .
 GOOS=darwin  GOARCH=arm64 go build -o cs2-remote-viewer-macos-arm64 .
 ```
 
-`darwin/amd64` needs an Intel Mac (or matching cgo flags): Ebiten's macOS
-OpenGL backend does not cross-compile from arm64.
+`darwin/amd64` needs an Intel Mac or a matching cgo cross-compilation setup
+for the native AppKit bridge.
 
 ## Layout
 

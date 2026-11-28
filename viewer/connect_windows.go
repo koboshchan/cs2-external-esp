@@ -41,11 +41,14 @@ const (
 	lbSetCurSel    = 0x0186
 	lbGetCurSel    = 0x0188
 
-	swHide = 0
-	swShow = 5
+	swHide     = 0
+	swShow     = 5
+	swMinimize = 6
+	swRestore  = 9
 
 	wmCommand = 0x0111
 	wmClose   = 0x0010
+	wmSize    = 0x0005
 
 	bnClicked = 0
 
@@ -63,33 +66,54 @@ const (
 	idWindowList = 111
 	idRefresh    = 112
 	idStart      = 113
+	idFollowGFN  = 114
+	idAspect     = 115
+	idTopInset   = 116
+	idControls   = 117
+
+	bsAutoCheckbox  = 0x00000003
+	bmGetCheck      = 0x00F0
+	bmSetCheck      = 0x00F1
+	cbsDropdownList = 0x0003
+	cbAddString     = 0x0143
+	cbGetCurSel     = 0x0147
+	cbSetCurSel     = 0x014E
 
 	hotkeyShowConnect = 3
+	hotkeyControls    = 4
+	modControl        = 0x0002
+	modNoRepeat       = 0x4000
 
 	vkF9 = 0x78
 )
 
 var (
-	pGetWindowTextW      = user32.NewProc("GetWindowTextW")
+	pGetWindowTextW       = user32.NewProc("GetWindowTextW")
 	pGetWindowTextLengthW = user32.NewProc("GetWindowTextLengthW")
-	pSetWindowTextW      = user32.NewProc("SetWindowTextW")
-	pSetFocus            = user32.NewProc("SetFocus")
-	pGetStockObject      = gdi32.NewProc("GetStockObject")
-	pSendMessageW        = user32.NewProc("SendMessageW")
+	pSetWindowTextW       = user32.NewProc("SetWindowTextW")
+	pSetFocus             = user32.NewProc("SetFocus")
+	pSetForegroundWindow  = user32.NewProc("SetForegroundWindow")
+	pIsDialogMessageW     = user32.NewProc("IsDialogMessageW")
+	pLoadIconW            = user32.NewProc("LoadIconW")
+	pGetStockObject       = gdi32.NewProc("GetStockObject")
+	pSendMessageW         = user32.NewProc("SendMessageW")
 
 	pOpenClipboard    = user32.NewProc("OpenClipboard")
 	pCloseClipboard   = user32.NewProc("CloseClipboard")
 	pGetClipboardData = user32.NewProc("GetClipboardData")
 	pGlobalLock       = kernel32.NewProc("GlobalLock")
 	pGlobalUnlock     = kernel32.NewProc("GlobalUnlock")
+	pGlobalSize       = kernel32.NewProc("GlobalSize")
+	pRtlMoveMemory    = kernel32.NewProc("RtlMoveMemory")
 
-	pEnumWindows       = user32.NewProc("EnumWindows")
-	pIsWindowVisible   = user32.NewProc("IsWindowVisible")
-	pIsWindow          = user32.NewProc("IsWindow")
-	pIsIconic          = user32.NewProc("IsIconic")
-	pGetClassNameW     = user32.NewProc("GetClassNameW")
+	pEnumWindows     = user32.NewProc("EnumWindows")
+	pIsWindowVisible = user32.NewProc("IsWindowVisible")
+	pIsWindow        = user32.NewProc("IsWindow")
+	pIsIconic        = user32.NewProc("IsIconic")
+	pGetClassNameW   = user32.NewProc("GetClassNameW")
 
-	overlayShowConnect atomic.Bool
+	overlayShowConnect  atomic.Bool
+	overlayShowControls atomic.Bool
 )
 
 const (
@@ -109,8 +133,16 @@ type connectWindow struct {
 	key    uintptr
 	status uintptr
 
-	playerList uintptr
-	windowList uintptr
+	playerList    uintptr
+	windowList    uintptr
+	windowLabel   uintptr
+	refreshButton uintptr
+	autoLabel     uintptr
+	followCheck   uintptr
+	aspectCombo   uintptr
+	topInsetEdit  uintptr
+	hotkeyWarning string
+	desktop       *virtualDesktopManager
 
 	connectRequested atomic.Bool
 	startRequested   atomic.Bool
@@ -132,6 +164,15 @@ var (
 
 func connectWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 	switch message {
+	case wmSize:
+		if gConnect != nil {
+			if wParam == 2 {
+				gConnect.visible = false
+			} else if !gConnect.visible {
+				gConnect.visible = true
+				overlayShowConnect.Store(true)
+			}
+		}
 	case wmCommand:
 		id := int(wParam & 0xffff)
 		code := int((wParam >> 16) & 0xffff)
@@ -153,6 +194,10 @@ func connectWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 			gConnect.setField(gConnect.key, clipboardText())
 		case idRefresh:
 			gConnect.RefreshWindows()
+		case idFollowGFN:
+			gConnect.updateTargetControls()
+		case idControls:
+			overlayShowControls.Store(true)
 		case idStart:
 			gConnect.startRequested.Store(true)
 		}
@@ -166,14 +211,13 @@ func connectWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 			overlayShowConnect.Store(true)
 		case hotkeyQuit:
 			overlayQuit.Store(true)
+		case hotkeyControls:
+			overlayShowControls.Store(true)
 		}
 		return 0
 
 	case wmClose:
-		pShowWindow.Call(hwnd, swHide)
-		if gConnect != nil {
-			gConnect.visible = false
-		}
+		overlayQuit.Store(true)
 		return 0
 	}
 
@@ -193,19 +237,22 @@ func newConnectWindow(o options) (*connectWindow, error) {
 	wc := wndClassEx{
 		cbSize:        uint32(unsafe.Sizeof(wndClassEx{})),
 		lpfnWndProc:   syscall.NewCallback(connectWndProc),
+		hIcon:         applicationIcon(),
+		hIconSm:       applicationIcon(),
+		hbrBackground: windows.Handle(16),
 		hInstance:     instance,
 		lpszClassName: className,
 	}
 	pRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
 
-	title, _ := windows.UTF16PtrFromString("cs2 remote viewer")
+	title, _ := windows.UTF16PtrFromString("CS2 Remote Viewer 0.6.3 · GeForce NOW")
 
 	hwnd, _, callErr := pCreateWindowExW.Call(
 		0,
 		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(title)),
 		wsCaption|wsSysMenu|wsMinimizeBox|wsVisible,
-		120, 80, 580, 620,
+		120, 80, 620, 760,
 		0, 0, uintptr(instance), 0,
 	)
 	if hwnd == 0 {
@@ -230,18 +277,44 @@ func newConnectWindow(o options) (*connectWindow, error) {
 	cw.button("Connect", idGo, 110, 130, 120, 30)
 	cw.status = cw.text(idStatus, 244, 136, 300, "Paste the room code and viewer key from the host.")
 
-	cw.label("Hide player", 16, 180)
+	cw.label("视角玩家", 16, 180)
 	cw.playerList = cw.listBox(idPlayerList, 16, 200, 520, 140)
 
-	cw.label("Overlay window", 16, 352)
-	cw.windowList = cw.listBox(idWindowList, 16, 372, 440, 140)
-	cw.button("Refresh", idRefresh, 466, 372, 70, 26)
+	cw.followCheck = createNativeControl(hwnd, "BUTTON", "自动定位 GeForce NOW", idFollowGFN, wsTabStop|bsAutoCheckbox, 16, 348, 270, 28)
+	followState := uintptr(1)
+	if o.rect != "" {
+		followState = 0
+	}
+	pSendMessageW.Call(cw.followCheck, bmSetCheck, followState, 0)
+	cw.autoLabel = cw.text(0, 16, 388, 540, "自动跟随 GeForce NOW。可以先开始映射，等待客户端窗口出现。")
+	cw.windowLabel = cw.text(0, 16, 384, 120, "Overlay window")
+	cw.windowList = cw.listBox(idWindowList, 16, 410, 440, 100)
+	cw.refreshButton = cw.button("Refresh", idRefresh, 466, 410, 70, 26)
+	cw.updateTargetControls()
+	cw.label("画面比例", 16, 534)
+	cw.aspectCombo = createNativeControl(hwnd, "COMBOBOX", "", idAspect, cbsDropdownList|wsVScroll|wsTabStop, 140, 530, 260, 220)
+	for _, title := range []string{"自动（主机摄像机）", "16:9", "16:10", "21:9", "4:3", "铺满窗口"} {
+		ptr, _ := windows.UTF16PtrFromString(title)
+		pSendMessageW.Call(cw.aspectCombo, cbAddString, 0, uintptr(unsafe.Pointer(ptr)))
+	}
+	pSendMessageW.Call(cw.aspectCombo, cbSetCurSel, 0, 0)
+	cw.label("顶部裁剪（像素）", 16, 574)
+	cw.topInsetEdit = cw.edit(idTopInset, 140, 570, 80, "0")
 
-	cw.button("Start overlay", idStart, 16, 524, 160, 32)
+	cw.button("Start overlay", idStart, 16, 618, 160, 32)
+	cw.button("显示控制台", idControls, 188, 618, 160, 32)
+	cw.text(0, 16, 662, 550, "Ctrl+P 控制台 · F8 下一位玩家 · F9 连接界面 · End 退出")
 
-	pRegisterHotKey.Call(hwnd, hotkeyNextPlayer, 0, vkF8)
-	pRegisterHotKey.Call(hwnd, hotkeyShowConnect, 0, vkF9)
-	pRegisterHotKey.Call(hwnd, hotkeyQuit, 0, vkEnd)
+	for _, key := range []struct{ id, modifiers, key uintptr }{
+		{hotkeyNextPlayer, modNoRepeat, vkF8},
+		{hotkeyShowConnect, modNoRepeat, vkF9},
+		{hotkeyQuit, modNoRepeat, vkEnd},
+		{hotkeyControls, modControl | modNoRepeat, 'P'},
+	} {
+		if ok, _, _ := pRegisterHotKey.Call(hwnd, key.id, key.modifiers, key.key); ok == 0 {
+			cw.hotkeyWarning = "有快捷键已被占用，可使用启动页的显示控制台按钮。"
+		}
+	}
 
 	cw.visible = true
 	pSetFocus.Call(cw.room)
@@ -249,73 +322,60 @@ func newConnectWindow(o options) (*connectWindow, error) {
 	return cw, nil
 }
 
-func (c *connectWindow) button(text string, id int, x, y, w, h int32) uintptr {
-	cls, _ := windows.UTF16PtrFromString("BUTTON")
-	val, _ := windows.UTF16FromString(text)
+func applicationIcon() windows.Handle {
+	instance, _, _ := pGetModuleHandleW.Call(0)
+	icon, _, _ := pLoadIconW.Call(instance, 2)
+	return windows.Handle(icon)
+}
 
+func createNativeControl(parent uintptr, class, text string, id int, style uintptr, x, y, w, h int32) uintptr {
+	cls, _ := windows.UTF16PtrFromString(class)
+	value, _ := windows.UTF16PtrFromString(text)
 	handle, _, _ := pCreateWindowExW.Call(0,
-		uintptr(unsafe.Pointer(cls)),
-		uintptr(unsafe.Pointer(&val[0])),
-		wsChild|wsVisible|wsTabStop,
-		uintptr(x), uintptr(y), uintptr(w), uintptr(h),
-		c.hwnd, uintptr(id), 0, 0)
-
+		uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(value)),
+		wsChild|wsVisible|style, uintptr(x), uintptr(y), uintptr(w), uintptr(h),
+		parent, uintptr(id), 0, 0)
 	if handle != 0 {
 		font, _, _ := pGetStockObject.Call(defaultGUIFont)
 		pSendMessageW.Call(handle, wmSetFont, font, 1)
 	}
 	return handle
+}
+
+func (c *connectWindow) button(text string, id int, x, y, w, h int32) uintptr {
+	return createNativeControl(c.hwnd, "BUTTON", text, id, wsTabStop, x, y, w, h)
 }
 
 func (c *connectWindow) label(text string, x, y int32) {
-	cls, _ := windows.UTF16PtrFromString("STATIC")
-	val, _ := windows.UTF16FromString(text)
-	pCreateWindowExW.Call(0,
-		uintptr(unsafe.Pointer(cls)),
-		uintptr(unsafe.Pointer(&val[0])),
-		wsChild|wsVisible,
-		uintptr(x), uintptr(y), 120, 22,
-		c.hwnd, 0, 0, 0)
+	c.text(0, x, y, 120, text)
 }
 
 func (c *connectWindow) text(id int, x, y, w int32, text string) uintptr {
-	cls, _ := windows.UTF16PtrFromString("STATIC")
-	val, _ := windows.UTF16FromString(text)
-	h, _, _ := pCreateWindowExW.Call(0,
-		uintptr(unsafe.Pointer(cls)),
-		uintptr(unsafe.Pointer(&val[0])),
-		wsChild|wsVisible,
-		uintptr(x), uintptr(y), uintptr(w), 40,
-		c.hwnd, uintptr(id), 0, 0)
-	return h
+	return createNativeControl(c.hwnd, "STATIC", text, id, 0, x, y, w, 40)
 }
 
 func (c *connectWindow) edit(id int, x, y, w int32, text string) uintptr {
-	cls, _ := windows.UTF16PtrFromString("EDIT")
-	val, _ := windows.UTF16FromString(text)
-	h, _, _ := pCreateWindowExW.Call(0,
-		uintptr(unsafe.Pointer(cls)),
-		uintptr(unsafe.Pointer(&val[0])),
-		wsChild|wsVisible|wsBorder|wsTabStop|esAutoHScroll,
-		uintptr(x), uintptr(y), uintptr(w), 26,
-		c.hwnd, uintptr(id), 0, 0)
-	return h
+	return createNativeControl(c.hwnd, "EDIT", text, id, wsBorder|wsTabStop|esAutoHScroll, x, y, w, 26)
 }
 
 func (c *connectWindow) listBox(id int, x, y, w, h int32) uintptr {
-	cls, _ := windows.UTF16PtrFromString("LISTBOX")
-	handle, _, _ := pCreateWindowExW.Call(0,
-		uintptr(unsafe.Pointer(cls)),
-		0,
-		wsChild|wsVisible|wsBorder|wsVScroll|wsTabStop|lbsNotify,
-		uintptr(x), uintptr(y), uintptr(w), uintptr(h),
-		c.hwnd, uintptr(id), 0, 0)
+	return createNativeControl(c.hwnd, "LISTBOX", "", id, wsBorder|wsVScroll|wsTabStop|lbsNotify, x, y, w, h)
+}
 
-	if handle != 0 {
-		font, _, _ := pGetStockObject.Call(defaultGUIFont)
-		pSendMessageW.Call(handle, wmSetFont, font, 1)
+func (c *connectWindow) FollowGeForce() bool {
+	state, _, _ := pSendMessageW.Call(c.followCheck, bmGetCheck, 0, 0)
+	return state == 1
+}
+
+func (c *connectWindow) updateTargetControls() {
+	manual, automatic := uintptr(swShow), uintptr(swHide)
+	if c.FollowGeForce() {
+		manual, automatic = swHide, swShow
 	}
-	return handle
+	for _, handle := range []uintptr{c.windowLabel, c.windowList, c.refreshButton} {
+		pShowWindow.Call(handle, manual)
+	}
+	pShowWindow.Call(c.autoLabel, automatic)
 }
 
 func (c *connectWindow) readValues() {
@@ -386,7 +446,7 @@ func (c *connectWindow) RefreshPlayers(relay *Relay) {
 		if p.Team == 3 {
 			team = "CT"
 		}
-		text := fmt.Sprintf("%d   %-2s   %-20s   %d hp", p.Index, team, p.Name, p.Health)
+		text := fmt.Sprintf("%d   %-2s   %-20s   %d hp", p.Index, team, playerLabelReplacer.Replace(p.Name), p.Health)
 		ptr, err := windows.UTF16PtrFromString(text)
 		if err != nil {
 			continue
@@ -489,6 +549,16 @@ func (c *connectWindow) Pump() {
 		if r == 0 {
 			return
 		}
+		if gControls != nil && gControls.visible {
+			if handled, _, _ := pIsDialogMessageW.Call(gControls.hwnd, uintptr(unsafe.Pointer(&m))); handled != 0 {
+				continue
+			}
+		}
+		if c.visible {
+			if handled, _, _ := pIsDialogMessageW.Call(c.hwnd, uintptr(unsafe.Pointer(&m))); handled != 0 {
+				continue
+			}
+		}
 		pTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
 		pDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
 	}
@@ -515,13 +585,18 @@ func (c *connectWindow) SetStatus(text string) {
 }
 
 func (c *connectWindow) Show() {
-	pShowWindow.Call(c.hwnd, swShow)
+	front, _, _ := pGetForegroundWindow.Call()
+	c.desktop.Follow(front, c.hwnd)
+	placeNativeWindow(c.hwnd, front)
+	c.visible = true
+	pShowWindow.Call(c.hwnd, swRestore)
+	pSetForegroundWindow.Call(c.hwnd)
 	pSetFocus.Call(c.room)
 	c.visible = true
 }
 
 func (c *connectWindow) Hide() {
-	pShowWindow.Call(c.hwnd, swHide)
+	pShowWindow.Call(c.hwnd, swMinimize)
 	c.visible = false
 }
 
@@ -534,6 +609,7 @@ func (c *connectWindow) Close() {
 	pUnregisterHotKey.Call(c.hwnd, hotkeyNextPlayer)
 	pUnregisterHotKey.Call(c.hwnd, hotkeyShowConnect)
 	pUnregisterHotKey.Call(c.hwnd, hotkeyQuit)
+	pUnregisterHotKey.Call(c.hwnd, hotkeyControls)
 	pDestroyWindow.Call(c.hwnd)
 	c.hwnd = 0
 	gConnect = nil
@@ -559,20 +635,12 @@ func clipboardText() string {
 	}
 	defer pGlobalUnlock.Call(handle)
 
-	// The handle is locked for the duration, so the pointer stays valid.
-	// UTF-16 until the terminator, capped so a huge clipboard cannot stall us.
-	const maxChars = 4096
-	n := 0
-	for n < maxChars {
-		if *(*uint16)(unsafe.Pointer(ptr + uintptr(n*2))) == 0 {
-			break
-		}
-		n++
-	}
-	if n == 0 {
+	byteCount, _, _ := pGlobalSize.Call(handle)
+	count := min(byteCount/2, 4096)
+	if count == 0 {
 		return ""
 	}
-
-	runes := unsafe.Slice((*uint16)(unsafe.Pointer(ptr)), n)
+	runes := make([]uint16, count)
+	pRtlMoveMemory.Call(uintptr(unsafe.Pointer(&runes[0])), ptr, count*2)
 	return strings.TrimSpace(windows.UTF16ToString(runes))
 }

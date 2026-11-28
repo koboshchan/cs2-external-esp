@@ -1,0 +1,89 @@
+name: Verify version
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  viewer:
+    name: Viewer / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.4'
+          cache-dependency-path: viewer/go.sum
+      - name: Set platform build settings
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            echo 'MACOSX_DEPLOYMENT_TARGET=13.0' >> "$GITHUB_ENV"
+            echo 'CGO_CFLAGS=-O2 -g -mmacosx-version-min=13.0' >> "$GITHUB_ENV"
+            echo 'CGO_LDFLAGS=-O2 -g -mmacosx-version-min=13.0' >> "$GITHUB_ENV"
+          else
+            echo 'CGO_ENABLED=0' >> "$GITHUB_ENV"
+          fi
+      - name: Run viewer tests
+        working-directory: viewer
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            go test -count=1 -race -v ./... | tee "$RUNNER_TEMP/viewer-tests.log"
+          else
+            go test -count=1 -v ./... | tee "$RUNNER_TEMP/viewer-tests.log"
+          fi
+          go vet ./...
+      - name: Build and package tested viewer
+        run: python .github/scripts/package_viewer.py
+      - name: Upload verified viewer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: viewer-${{ runner.os }}
+          path: build/verified-viewer/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-${{ runner.os }}
+          path: ${{ runner.temp }}/viewer-tests.log
+          if-no-files-found: ignore
+  relay-and-protocol:
+    name: Relay and C++ protocol
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install relay dependencies
+        working-directory: server
+        run: npm ci --no-audit --no-fund
+      - name: Run relay integration tests
+        working-directory: server
+        run: npm test
+      - name: Run C++ protocol, camera and endpoint tests
+        run: |
+          set -euo pipefail
+          for test in net_protocol net_camera net_endpoint; do
+            g++ -std=c++20 -O1 -I src "tests/${test}_test.cpp" -o "$RUNNER_TEMP/$test"
+            "$RUNNER_TEMP/$test"
+          done

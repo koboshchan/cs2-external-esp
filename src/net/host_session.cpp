@@ -30,11 +30,25 @@ namespace net
 			return false;
 		}
 
-		out.server = ws_url;
-		out.room = response.value("room", std::string{});
-		out.host_token = response.value("hostToken", std::string{});
-		out.viewer_key = response.value("viewerKey", std::string{});
-		out.error.clear();
+		if (!response.is_object() || !response.contains("room") || !response["room"].is_string() ||
+			!response.contains("hostToken") || !response["hostToken"].is_string() ||
+			!response.contains("viewerKey") || !response["viewerKey"].is_string())
+		{
+			if (error) *error = "relay returned invalid room credentials";
+			return false;
+		}
+
+		HostStatus created;
+		created.server = ws_url;
+		created.room = response["room"].get<std::string>();
+		created.host_token = response["hostToken"].get<std::string>();
+		created.viewer_key = response["viewerKey"].get<std::string>();
+		if (created.room.empty() || created.host_token.empty() || created.viewer_key.empty())
+		{
+			if (error) *error = "relay returned an incomplete room";
+			return false;
+		}
+		out = std::move(created);
 
 		// Keep the latest codes visible to the menu even before Start().
 		g_status.server = out.server;
@@ -43,12 +57,6 @@ namespace net
 		g_status.viewer_key = out.viewer_key;
 		g_status.error.clear();
 
-		if (out.room.empty() || out.host_token.empty())
-		{
-			if (error) *error = "relay returned an incomplete room";
-			return false;
-		}
-
 		LOGF(INFO, "[net] created room {} (viewer key {})", out.room, out.viewer_key);
 		return true;
 	}
@@ -56,14 +64,19 @@ namespace net
 	bool HostSession::Start(std::string* error)
 	{
 		HostStatus& s = g_status;
+		std::string failure;
 
 		s.server = ResolveServerUrl(cfg::remote::url);
 
 		// Reuse an explicitly configured room, otherwise ask the relay for one.
 		if (cfg::remote::room.empty() || cfg::remote::token.empty())
 		{
-			if (!CreateRoom(s.server, s, error))
+			if (!CreateRoom(s.server, s, &failure))
+			{
+				s.error = failure;
+				if (error) *error = failure;
 				return false;
+			}
 		}
 		else
 		{
@@ -80,7 +93,8 @@ namespace net
 
 		if (!Publisher::Start())
 		{
-			if (error) *error = "publisher could not start";
+			s.error = "publisher could not start";
+			if (error) *error = s.error;
 			return false;
 		}
 
@@ -108,7 +122,7 @@ namespace net
 		status.dropped = stats.dropped;
 		status.viewers = stats.viewers;
 
-		if (!stats.last_message.empty())
+		if (stats.running && !stats.last_message.empty())
 			status.error = stats.last_message;
 
 		return status;
