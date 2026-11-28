@@ -30,6 +30,7 @@ type Relay struct {
 	status   RelayStatus
 	latest   *Frame
 	latestAt time.Time
+	timeline frameTimeline
 	frames   uint64
 	bytes    uint64
 	gaps     uint64
@@ -166,6 +167,7 @@ func (r *Relay) consume(data []byte) {
 	r.bytes += uint64(len(data))
 	r.latest = frame
 	r.latestAt = time.Now()
+	r.timeline.append(frame, r.latestAt)
 	r.lastErr = ""
 	r.status.Message = ""
 	r.mu.Unlock()
@@ -201,6 +203,7 @@ func (r *Relay) consumeControl(data []byte) error {
 		r.haveSeq = false
 		r.latest = nil
 		r.latestAt = time.Time{}
+		r.timeline = frameTimeline{}
 		r.mu.Unlock()
 	case "host_online":
 		r.mu.Lock()
@@ -208,6 +211,7 @@ func (r *Relay) consumeControl(data []byte) error {
 		r.haveSeq = false
 		r.latest = nil
 		r.latestAt = time.Time{}
+		r.timeline = frameTimeline{}
 		r.mu.Unlock()
 	case "host_offline":
 		r.setStatus(func(s *RelayStatus) { s.HostOnline = false })
@@ -271,6 +275,22 @@ type RelaySnapshot struct {
 func (r *Relay) Snapshot() RelaySnapshot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	return r.snapshotLocked()
+}
+
+// DisplaySnapshot samples all camera and player transforms at one timestamp.
+// FrameAt and connection counters still describe the latest received packet.
+func (r *Relay) DisplaySnapshot(delayMS int) RelaySnapshot {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	snapshot := r.snapshotLocked()
+	if frame := r.timeline.sample(time.Now(), delayMS); frame != nil {
+		snapshot.Frame = frame
+	}
+	return snapshot
+}
+
+func (r *Relay) snapshotLocked() RelaySnapshot {
 	return RelaySnapshot{
 		Status:  r.status,
 		Frame:   r.latest,

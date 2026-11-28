@@ -826,7 +826,7 @@ func runUI(ctx context.Context, o options) (result *Relay, runErr error) {
 			break
 		}
 		cw.Pump()
-		controls.FlushAppearance(false)
+		controls.FlushSettings(false)
 		if cw.TakeConnect() {
 			server, room, key := cw.Values()
 			if room == "" || key == "" {
@@ -913,6 +913,7 @@ func runUI(ctx context.Context, o options) (result *Relay, runErr error) {
 				}
 			}
 			sc.viewKey = controls.viewKey
+			sc.delayMS = controls.syncSettings.DelayMS
 			sc.display = controls.Display()
 			sc.palette = controls.appearance.palette()
 			overlay.opacity = uint8(controls.appearance.OverlayOpacity * 255 / 100)

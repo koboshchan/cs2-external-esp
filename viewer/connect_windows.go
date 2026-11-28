@@ -245,7 +245,7 @@ func newConnectWindow(o options) (*connectWindow, error) {
 	}
 	pRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
 
-	title, _ := windows.UTF16PtrFromString("CS2 Remote Viewer 0.6.2 · GeForce NOW")
+	title, _ := windows.UTF16PtrFromString("CS2 Remote Viewer 0.6.3 · GeForce NOW")
 
 	hwnd, _, callErr := pCreateWindowExW.Call(
 		0,

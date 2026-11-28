@@ -40,6 +40,7 @@ int ov_geforce_frontmost(void);
 int ov_controls_enable(int enabled);
 unsigned int ov_controls_flags(void);
 int ov_controls_overlay_hidden(void);
+int ov_controls_delay_ms(void);
 uint32_t ov_controls_color(int index);
 void ov_controls_set_players(const char* lines);
 void ov_controls_set_view_key(const char* key);
@@ -541,6 +542,7 @@ func runUI(ctx context.Context, o options) (*Relay, error) {
 				lastControlPlayersCheck = time.Now()
 			}
 			sc.viewKey = C.GoString(C.ov_controls_view_key())
+			sc.delayMS = int(C.ov_controls_delay_ms())
 			flags := uint32(C.ov_controls_flags())
 			sc.display = displaySettings{Boxes: flags&1 != 0, Health: flags&2 != 0,
 				Skeleton: flags&4 != 0, Names: flags&8 != 0, Teammates: flags&16 != 0}

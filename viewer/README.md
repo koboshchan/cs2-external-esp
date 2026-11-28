@@ -11,7 +11,7 @@ can follow the native GeForce NOW client or a manually selected window.
 The host is the C++ application (`cs2-external-esp.exe`, Host tab). This binary
 is the viewer.
 
-## Run (Windows, GeForce NOW viewer 0.6.2)
+## Run (Windows, GeForce NOW viewer 0.6.3)
 
 Build for Windows 10/11 x64 with `GOOS=windows GOARCH=amd64 CGO_ENABLED=0`.
 The native GeForce NOW application is the automatic overlay target.
@@ -52,6 +52,15 @@ On macOS, open controls with **Command+P** and click the shortcut button beside
 **映射总开关键**. Press the desired combination to save it, or **Escape** to cancel.
 The macOS default is also **F6**, which may require **fn+F6** depending on keyboard
 settings. Its binding is stored in the app's preferences.
+
+The **数据同步延迟** slider buffers camera and bone snapshots together using host
+timestamps. Its range is 0–250 ms, with a 35 ms experimental default. Increasing
+the value adds display latency. A value of 0 displays the latest received frame.
+Windows saves this setting in `display-sync.json`; macOS uses the app preference
+`DisplaySyncDelayMS`. Actual GeForce NOW alignment needs gameplay verification.
+The protocol currently carries another player's EyePos, EyeAngles and Fov.
+Reproducing that player's full firing camera motion requires additional rendered
+camera data. Synthetic interpolation tests cover timing and projection behavior.
 
 The Windows EXE is cross-compiled on macOS. Shared tests and static checks were
 run locally. Windows-native mouse, hotkey, virtual-desktop, multi-monitor and

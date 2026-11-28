@@ -25,6 +25,7 @@ const (
 	idResetColors   = 231
 	idToggleOverlay = 232
 	idApplyHotkey   = 233
+	idDisplayDelay  = 234
 	wmHScroll       = 0x0114
 	tbmGetPos       = 0x0400
 	tbmSetPos       = 0x0405
@@ -54,6 +55,9 @@ type controlsWindow struct {
 	playerSignature            string
 	appearanceDirty            bool
 	appearanceChanged          time.Time
+	syncSettings               displaySyncSettings
+	syncSlider, syncLabel      uintptr
+	syncDirty                  bool
 	desktop                    *virtualDesktopManager
 	overlayToggleButton        uintptr
 	overlayHidden              bool
@@ -68,6 +72,14 @@ func appearancePath() string {
 		return ""
 	}
 	return filepath.Join(filepath.Dir(path), "appearance.json")
+}
+
+func displaySyncPath() string {
+	path := configPath()
+	if path == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(path), "display-sync.json")
 }
 
 func controlsWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
@@ -89,7 +101,16 @@ func controlsWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 		c.Hide()
 		return 0
 	case wmHScroll:
-		c.updateOpacity()
+		if lParam == c.syncSlider {
+			value, _, _ := pSendMessageW.Call(c.syncSlider, tbmGetPos, 0, 0)
+			c.syncSettings.DelayMS = min(maxDisplayDelayMS, max(0, int(value)))
+			setNativeText(c.syncLabel, strconv.Itoa(c.syncSettings.DelayMS)+" ms")
+			c.syncDirty = true
+			c.appearanceChanged = time.Now()
+			setNativeText(c.status, "同步延迟已应用，正在保存。")
+		} else {
+			c.updateOpacity()
+		}
 		return 0
 	case wmCommand:
 		id, code := int(wParam&0xffff), int(wParam>>16&0xffff)
@@ -138,12 +159,14 @@ func newControlsWindow() (*controlsWindow, error) {
 	title, _ := windows.UTF16PtrFromString("显示控制台 · Ctrl+P")
 	hwnd, _, err := pCreateWindowExW.Call(wsExTopmost|wsExToolWindow|wsExLayered,
 		uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
-		wsCaption|wsSysMenu, 180, 80, 500, 814, 0, 0, instance, 0)
+		wsCaption|wsSysMenu, 180, 80, 500, 878, 0, 0, instance, 0)
 	if hwnd == 0 {
 		return nil, fmt.Errorf("create controls: %v", err)
 	}
 	data, _ := os.ReadFile(appearancePath())
 	c := &controlsWindow{hwnd: hwnd, appearance: decodeViewerAppearance(data)}
+	syncData, _ := os.ReadFile(displaySyncPath())
+	c.syncSettings = decodeDisplaySyncSettings(syncData)
 	gControls = c
 	for i, title := range []string{"人物方框", "血条", "骨骼", "人物名称与状态", "队友"} {
 		handle := createNativeControl(hwnd, "BUTTON", title, idDisplayFirst+i, bsAutoCheckBox|wsTabStop,
@@ -154,8 +177,14 @@ func newControlsWindow() (*controlsWindow, error) {
 	createNativeControl(hwnd, "STATIC", "骨骼世界视角", 0, 0, 20, 178, 440, 24)
 	c.viewList = createNativeControl(hwnd, "LISTBOX", "", idViewList, wsBorder|wsVScroll|wsTabStop|lbsNotify, 20, 206, 440, 110)
 	c.viewStatus = createNativeControl(hwnd, "STATIC", "当前视角  主机当前视角", 0, 0, 20, 324, 440, 28)
+	createNativeControl(hwnd, "STATIC", "数据同步延迟", 0, 0, 20, 365, 120, 24)
+	c.syncSlider = createNativeControl(hwnd, "msctls_trackbar32", "", idDisplayDelay, wsTabStop, 144, 361, 240, 32)
+	pSendMessageW.Call(c.syncSlider, tbmSetRange, 1, maxDisplayDelayMS<<16)
+	pSendMessageW.Call(c.syncSlider, tbmSetPos, 1, uintptr(c.syncSettings.DelayMS))
+	c.syncLabel = createNativeControl(hwnd, "STATIC", strconv.Itoa(c.syncSettings.DelayMS)+" ms", 0, 0, 395, 365, 75, 24)
+	createNativeControl(hwnd, "STATIC", "0 ms 直接显示；增加延迟会缓冲并插值数据。", 0, 0, 20, 397, 450, 24)
 	for i, title := range []string{"映射不透明度", "面板不透明度"} {
-		y := int32(365 + i*46)
+		y := int32(429 + i*46)
 		createNativeControl(hwnd, "STATIC", title, 0, 0, 20, y, 120, 24)
 		slider := createNativeControl(hwnd, "msctls_trackbar32", "", idOverlayAlpha+i, wsTabStop, 144, y-4, 240, 32)
 		minimum := uintptr(0)
@@ -166,19 +195,19 @@ func newControlsWindow() (*controlsWindow, error) {
 		c.opacitySliders[i] = slider
 		c.opacityLabels[i] = createNativeControl(hwnd, "STATIC", "100%", 0, 0, 395, y, 65, 24)
 	}
-	createNativeControl(hwnd, "STATIC", "颜色（#RRGGBB）", 0, 0, 20, 462, 440, 24)
+	createNativeControl(hwnd, "STATIC", "颜色（#RRGGBB）", 0, 0, 20, 526, 440, 24)
 	for i, title := range []string{"T 方框与骨骼", "CT 方框与骨骼", "正常血条", "低血量血条", "人物名称"} {
-		x, y := int32(20+(i%2)*230), int32(498+(i/2)*42)
+		x, y := int32(20+(i%2)*230), int32(562+(i/2)*42)
 		createNativeControl(hwnd, "STATIC", title, 0, 0, x, y+4, 128, 24)
 		c.colorFields[i] = createNativeControl(hwnd, "EDIT", "", idColorFirst+i, wsBorder|wsTabStop|esAutoHScroll, x+130, y, 88, 26)
 	}
-	createNativeControl(hwnd, "BUTTON", "应用颜色", idApplyColors, wsTabStop, 20, 634, 150, 30)
-	createNativeControl(hwnd, "BUTTON", "恢复默认外观", idResetColors, wsTabStop, 185, 634, 170, 30)
-	c.overlayToggleButton = createNativeControl(hwnd, "BUTTON", "隐藏映射", idToggleOverlay, wsTabStop, 370, 634, 100, 30)
-	createNativeControl(hwnd, "STATIC", "映射总开关键", 0, 0, 20, 682, 128, 24)
-	c.hotkeyField = createNativeControl(hwnd, "msctls_hotkey32", "", 0, wsBorder|wsTabStop, 150, 678, 190, 30)
-	createNativeControl(hwnd, "BUTTON", "保存按键", idApplyHotkey, wsTabStop, 350, 678, 120, 30)
-	c.status = createNativeControl(hwnd, "STATIC", "点击按键框输入快捷键，然后保存。", 0, 0, 20, 726, 440, 40)
+	createNativeControl(hwnd, "BUTTON", "应用颜色", idApplyColors, wsTabStop, 20, 698, 150, 30)
+	createNativeControl(hwnd, "BUTTON", "恢复默认外观", idResetColors, wsTabStop, 185, 698, 170, 30)
+	c.overlayToggleButton = createNativeControl(hwnd, "BUTTON", "隐藏映射", idToggleOverlay, wsTabStop, 370, 698, 100, 30)
+	createNativeControl(hwnd, "STATIC", "映射总开关键", 0, 0, 20, 746, 128, 24)
+	c.hotkeyField = createNativeControl(hwnd, "msctls_hotkey32", "", 0, wsBorder|wsTabStop, 150, 742, 190, 30)
+	createNativeControl(hwnd, "BUTTON", "保存按键", idApplyHotkey, wsTabStop, 350, 742, 120, 30)
+	c.status = createNativeControl(hwnd, "STATIC", "点击按键框输入快捷键，然后保存。", 0, 0, 20, 790, 440, 40)
 	c.loadOverlayHotkey()
 	c.populateAppearance()
 	c.RefreshPlayers(nil)
@@ -213,16 +242,25 @@ func (c *controlsWindow) persistAppearance() {
 	setNativeText(c.status, "外观已应用，正在保存。")
 }
 
-func (c *controlsWindow) FlushAppearance(force bool) {
-	if !c.appearanceDirty || (!force && time.Since(c.appearanceChanged) < 300*time.Millisecond) {
+func (c *controlsWindow) FlushSettings(force bool) {
+	if (!c.appearanceDirty && !c.syncDirty) || (!force && time.Since(c.appearanceChanged) < 300*time.Millisecond) {
 		return
 	}
-	c.appearanceDirty = false
-	if err := saveJSONFile(appearancePath(), c.appearance); err != nil {
-		setNativeText(c.status, "外观已应用，保存失败。"+err.Error())
-		return
+	if c.appearanceDirty {
+		c.appearanceDirty = false
+		if err := saveJSONFile(appearancePath(), c.appearance); err != nil {
+			setNativeText(c.status, "外观已应用，保存失败。"+err.Error())
+			return
+		}
 	}
-	setNativeText(c.status, "外观已应用并保存。")
+	if c.syncDirty {
+		c.syncDirty = false
+		if err := saveJSONFile(displaySyncPath(), c.syncSettings); err != nil {
+			setNativeText(c.status, "同步延迟已应用，保存失败。"+err.Error())
+			return
+		}
+	}
+	setNativeText(c.status, "显示设置已应用并保存。")
 }
 
 func (c *controlsWindow) updateOpacity() {
@@ -333,7 +371,7 @@ func (c *controlsWindow) Hide() {
 }
 
 func (c *controlsWindow) Close() {
-	c.FlushAppearance(true)
+	c.FlushSettings(true)
 	if c.hotkeyID != 0 {
 		pUnregisterHotKey.Call(c.hwnd, c.hotkeyID)
 	}

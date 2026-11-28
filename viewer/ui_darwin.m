@@ -45,6 +45,9 @@ static BOOL ov_bind_overlay_hotkey(UInt32 code, UInt32 modifiers, NSString *titl
 static NSSlider *gOverlayOpacity = nil;
 static NSSlider *gConsoleOpacity = nil;
 static NSTextField *gOpacityLabels[2];
+static NSSlider *gDisplayDelay = nil;
+static NSTextField *gDisplayDelayLabel = nil;
+static NSString *const kDisplayDelay = @"DisplaySyncDelayMS";
 static NSColorWell *gPlayerColors[5];
 static const uint32_t gDefaultPlayerColors[5] = {0xeb9632, 0x50a0ff, 0x50dc78, 0xeb5a50, 0xebebf0};
 static NSString *const kOverlayOpacity = @"AppearanceOverlayOpacity";
@@ -213,6 +216,7 @@ static NSWindowCollectionBehavior ov_floating_collection_behavior(void) {
 - (void)quitClicked:(id)sender;
 - (void)toggleConsole:(id)sender;
 - (void)appearanceChanged:(id)sender;
+- (void)displayDelayChanged:(id)sender;
 - (void)resetAppearance:(id)sender;
 - (void)toggleOverlay:(id)sender;
 - (void)recordOverlayHotkey:(id)sender;
@@ -253,6 +257,13 @@ static NSWindowCollectionBehavior ov_floating_collection_behavior(void) {
   NSMutableArray<NSNumber *> *colors = [NSMutableArray array];
   for (int i = 0; i < 5; ++i) [colors addObject:@(ov_controls_color(i))];
   [defaults setObject:colors forKey:kPlayerColors];
+}
+
+- (void)displayDelayChanged:(id)sender {
+  NSInteger delay = lround(gDisplayDelay.doubleValue);
+  gDisplayDelay.integerValue = delay;
+  gDisplayDelayLabel.stringValue = [NSString stringWithFormat:@"%ld ms", (long)delay];
+  [NSUserDefaults.standardUserDefaults setInteger:delay forKey:kDisplayDelay];
 }
 
 - (void)resetAppearance:(id)sender {
@@ -427,7 +438,7 @@ static void ov_apply_appearance(void) {
 
 static void ov_console_create(void) {
   if (gConsole) return;
-  gConsole = [[OvConsolePanel alloc] initWithContentRect:NSMakeRect(0, 0, 440, 680)
+  gConsole = [[OvConsolePanel alloc] initWithContentRect:NSMakeRect(0, 0, 440, 744)
       styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskUtilityWindow |
                 NSWindowStyleMaskNonactivatingPanel
       backing:NSBackingStoreBuffered defer:NO];
@@ -440,15 +451,15 @@ static void ov_console_create(void) {
   gConsole.collectionBehavior = ov_floating_collection_behavior();
   NSArray<NSString *> *titles = @[@"人物方框", @"血条", @"骨骼", @"人物名称与状态", @"队友"];
   for (NSUInteger i = 0; i < titles.count; ++i) {
-    NSButton *check = [[OvButton alloc] initWithFrame:NSMakeRect(20, 628 - i * 34, 400, 26)];
+    NSButton *check = [[OvButton alloc] initWithFrame:NSMakeRect(20, 692 - i * 34, 400, 26)];
     [check setButtonType:NSButtonTypeSwitch];
     check.title = titles[i];
     check.state = NSControlStateValueOn;
     [gConsole.contentView addSubview:check];
     gDisplayChecks[i] = check;
   }
-  [gConsole.contentView addSubview:makeLabel(NSMakeRect(20, 458, 400, 24), @"骨骼世界视角")];
-  NSScrollView *playersScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(20, 350, 400, 100)];
+  [gConsole.contentView addSubview:makeLabel(NSMakeRect(20, 522, 400, 24), @"骨骼世界视角")];
+  NSScrollView *playersScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(20, 414, 400, 100)];
   playersScroll.hasVerticalScroller = YES;
   playersScroll.borderType = NSBezelBorder;
   gViewPlayers = [NSMutableArray arrayWithObject:@{@"key":@"", @"title":@"主机当前视角"}];
@@ -466,14 +477,30 @@ static void ov_console_create(void) {
   gViewPlayersTable.toolTip = @"单击玩家，按该玩家的眼睛位置、朝向和视场角绘制骨骼世界。";
   playersScroll.documentView = gViewPlayersTable;
   [gConsole.contentView addSubview:playersScroll];
-  gViewStatus = makeLabel(NSMakeRect(20, 322, 400, 24), @"");
+  gViewStatus = makeLabel(NSMakeRect(20, 386, 400, 24), @"");
   gViewStatus.lineBreakMode = NSLineBreakByTruncatingTail;
   [gConsole.contentView addSubview:gViewStatus];
   [gViewPlayersTable selectRowIndexes:[NSIndexSet indexSetWithIndex:0] byExtendingSelection:NO];
   ov_view_selection_changed();
 
   NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-  [defaults registerDefaults:@{kOverlayOpacity:@100, kConsoleOpacity:@100}];
+  [defaults registerDefaults:@{kOverlayOpacity:@100, kConsoleOpacity:@100, kDisplayDelay:@35}];
+  [gConsole.contentView addSubview:makeLabel(NSMakeRect(20, 346, 130, 24), @"数据同步延迟")];
+  gDisplayDelay = [[OvSlider alloc] initWithFrame:NSMakeRect(150, 346, 200, 24)];
+  gDisplayDelay.minValue = 0;
+  gDisplayDelay.maxValue = 250;
+  gDisplayDelay.doubleValue = fmin(250, fmax(0, [defaults doubleForKey:kDisplayDelay]));
+  gDisplayDelay.continuous = YES;
+  gDisplayDelay.target = gController;
+  gDisplayDelay.action = @selector(displayDelayChanged:);
+  [gDisplayDelay setAccessibilityLabel:@"数据同步延迟"];
+  [gConsole.contentView addSubview:gDisplayDelay];
+  gDisplayDelayLabel = makeLabel(NSMakeRect(356, 346, 64, 24), @"");
+  [gConsole.contentView addSubview:gDisplayDelayLabel];
+  [gController displayDelayChanged:nil];
+  NSTextField *syncHint = makeLabel(NSMakeRect(20, 316, 400, 24), @"0 ms 直接显示；增加延迟会缓冲并插值数据。");
+  syncHint.font = [NSFont systemFontOfSize:11];
+  [gConsole.contentView addSubview:syncHint];
   NSArray<NSString *> *opacityTitles = @[@"映射不透明度", @"面板不透明度"];
   NSArray<NSString *> *opacityKeys = @[kOverlayOpacity, kConsoleOpacity];
   for (NSUInteger i = 0; i < 2; ++i) {
@@ -621,6 +648,8 @@ unsigned int ov_controls_flags(void) {
 }
 
 int ov_controls_overlay_hidden(void) { return gOverlayHidden ? 1 : 0; }
+
+int ov_controls_delay_ms(void) { return gDisplayDelay ? (int)gDisplayDelay.integerValue : 35; }
 
 static uint32_t ov_rgb_channel(CGFloat value) {
   return (uint32_t)lround(fmin(1, fmax(0, value)) * 255);

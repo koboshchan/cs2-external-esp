@@ -76,10 +76,11 @@ type scene struct {
 	display       displaySettings
 	palette       playerPalette
 	viewKey       string
+	delayMS       int
 }
 
 func newScene(relay *Relay, o options) *scene {
-	return &scene{relay: relay, opts: o, selected: -1, display: defaultDisplaySettings(), palette: defaultPlayerPalette()}
+	return &scene{relay: relay, opts: o, selected: -1, display: defaultDisplaySettings(), palette: defaultPlayerPalette(), delayMS: defaultDisplayDelayMS}
 }
 
 func (s *scene) update() {
@@ -152,7 +153,7 @@ func (s *scene) currentPlayer(f *Frame) *Player {
 func (s *scene) draw(c canvas) {
 	w, h := c.Begin()
 
-	snap := s.relay.Snapshot()
+	snap := s.relay.DisplaySnapshot(s.delayMS)
 
 	if snap.Frame == nil {
 		c.Text(16, 16, "waiting for host...", color.RGBA{230, 230, 235, 255})
