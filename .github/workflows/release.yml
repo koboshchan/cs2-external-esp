@@ -126,7 +126,7 @@ jobs:
           echo "" >> CHANGELOG.md
           echo "- **Workflow:** release.yml" >> CHANGELOG.md
           echo "- **Source:** [Repository](https://github.com/$REPO_OWNER/$REPO_NAME)" >> CHANGELOG.md
-          echo "- **Build ID:** `$RUN_ID`" >> CHANGELOG.md
+          echo "- Build ID $RUN_ID" >> CHANGELOG.md
           echo "" >> CHANGELOG.md
         shell: bash
 

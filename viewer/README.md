@@ -62,9 +62,11 @@ The protocol currently carries another player's EyePos, EyeAngles and Fov.
 Reproducing that player's full firing camera motion requires additional rendered
 camera data. Synthetic interpolation tests cover timing and projection behavior.
 
-The Windows EXE is cross-compiled on macOS. Shared tests and static checks were
-run locally. Windows-native mouse, hotkey, virtual-desktop, multi-monitor and
-GeForce NOW fullscreen behavior still require Windows runtime verification.
+Local Windows builds can be cross-compiled on macOS. GitHub verification runs
+viewer tests and builds natively on Windows x64 and macOS arm64, alongside relay
+and C++ protocol tests. Release packaging depends on these checks passing.
+Windows mouse interaction, global hotkeys, virtual desktops, multiple monitors
+and GeForce NOW fullscreen behavior still require gameplay runtime verification.
 
 ## Run (macOS)
 
