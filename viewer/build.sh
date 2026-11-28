@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Builds the viewer for macOS (arm64) and Windows (amd64).
 #
-# macOS: Ebiten window (preview).
+# macOS: native AppKit launcher and transparent click-through overlay.
 # Windows: layered click-through overlay, pure Go (no cgo).
 set -eu
 

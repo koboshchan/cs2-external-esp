@@ -21,6 +21,10 @@ import (
 const defaultServer = "wss://cs2.kjt.lol/ws"
 
 func normalizeWSURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return defaultServer
+	}
 	scheme := "wss://"
 	rest := raw
 
@@ -60,16 +64,16 @@ func resolveServerURL(configured string) string {
 }
 
 type options struct {
-	server   string
-	room     string
-	key      string
-	me       string
-	meIndex  int
-	seconds  int
-	rect     string
-	autostart bool
-	dump      string
-	pick      int
+	server     string
+	room       string
+	key        string
+	me         string
+	meIndex    int
+	seconds    int
+	rect       string
+	autostart  bool
+	dump       string
+	pick       int
 	uiTest     bool
 	followTest bool
 }
@@ -135,7 +139,7 @@ func main() {
 func startRelay(ctx context.Context, o options) (*Relay, context.CancelFunc) {
 	relayCtx, cancel := context.WithCancel(ctx)
 
-	relay := &Relay{URL: o.server, Room: o.room, Key: o.key}
+	relay := &Relay{URL: o.server, Room: strings.ToUpper(strings.TrimSpace(o.room)), Key: strings.TrimSpace(o.key)}
 	go relay.Run(relayCtx)
 
 	return relay, cancel

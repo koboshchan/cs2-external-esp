@@ -4,7 +4,7 @@ package main
 //
 // The canvas is implemented per platform:
 //   windows: layered, click-through, always-on-top overlay (Win32 + GDI)
-//   darwin:  Ebiten window (preview only; CS2 does not run on macOS)
+//   darwin:  transparent click-through overlay (AppKit + Core Graphics)
 
 import (
 	"fmt"
@@ -47,14 +47,39 @@ func requestNextPlayer() { nextPlayerRequested.Store(true) }
 
 func consumeNextPlayer() bool { return nextPlayerRequested.Swap(false) }
 
+type displaySettings struct {
+	Boxes     bool
+	Health    bool
+	Skeleton  bool
+	Names     bool
+	Teammates bool
+}
+
+func defaultDisplaySettings() displaySettings {
+	return displaySettings{Boxes: true, Health: true, Skeleton: true, Names: true, Teammates: true}
+}
+
+type playerPalette struct {
+	T, CT, Health, HealthLow, Name color.RGBA
+}
+
+func defaultPlayerPalette() playerPalette {
+	return playerPalette{T: colorT, CT: colorCT, Health: colorHealth,
+		HealthLow: colorHealthLow, Name: color.RGBA{235, 235, 240, 255}}
+}
+
 type scene struct {
-	relay    *Relay
-	opts     options
-	selected int8 // -1 = auto
+	relay         *Relay
+	opts          options
+	selected      int8 // -1 = auto
+	useHostMatrix bool
+	display       displaySettings
+	palette       playerPalette
+	viewKey       string
 }
 
 func newScene(relay *Relay, o options) *scene {
-	return &scene{relay: relay, opts: o, selected: -1}
+	return &scene{relay: relay, opts: o, selected: -1, display: defaultDisplaySettings(), palette: defaultPlayerPalette()}
 }
 
 func (s *scene) update() {
@@ -140,18 +165,16 @@ func (s *scene) draw(c canvas) {
 
 	f := snap.Frame
 
-	// The view is entirely the host's: its camera, its angles, its FOV. The
-	// viewer's own mouse never influences it.
-	camera := f.Camera
-	if camera.HostFov <= 1 || camera.HostFov > 179 {
-		camera.HostFov = 90
+	m, host, available := s.cameraForFrame(f, w/h)
+	if !available {
+		c.Text(16, 16, "Selected player is unavailable. Choose a viewpoint in controls.", colorBomb)
+		return
 	}
-
-	aspect := w / h
-	m := BuildViewMatrix(camera.HostEyePos, camera.HostEyeAngles, camera.HostFov, aspect, camera.FovMode)
-
-	host := f.PlayerByIndex(int(camera.HostIndex))
 	hidden := s.hiddenPlayer(f)
+	reference := host
+	if hidden != nil {
+		reference = hidden
+	}
 
 	if c.Opaque() {
 		s.drawGrid(c, w, h)
@@ -168,7 +191,10 @@ func (s *scene) draw(c canvas) {
 		if hidden != nil && p.Index == hidden.Index {
 			continue
 		}
-		mate := host != nil && p.Team == host.Team
+		mate := reference != nil && p.Team == reference.Team
+		if mate && !s.display.Teammates {
+			continue
+		}
 		s.drawPlayer(c, m, w, h, p, mate)
 	}
 
@@ -176,7 +202,7 @@ func (s *scene) draw(c canvas) {
 
 	viewer := "host"
 	if host != nil {
-		viewer = "host " + host.Name
+		viewer = host.Name
 	}
 	hud := fmt.Sprintf("room %s   seq %d   %s ago   players %d   view: %s",
 		snap.Status.Room, f.Seq, ageOf(snap.FrameAt), len(f.Players), viewer)
@@ -184,8 +210,8 @@ func (s *scene) draw(c canvas) {
 
 	c.Text(16, h-24, controlsHint, colorDim)
 
-	if !snap.Status.HostOnline {
-		c.Text(16, 34, "host offline - last frame shown", colorBomb)
+	if !snap.Status.Connected || !snap.Status.HostOnline || snap.Status.Message != "" || time.Since(snap.FrameAt) > 3*time.Second {
+		c.Text(16, 34, StatusText(snap, len(f.Players)), colorBomb)
 	}
 	if snap.Gaps > 0 {
 		c.Text(16, 50, fmt.Sprintf("gaps: %d", snap.Gaps), colorDim)
@@ -193,9 +219,9 @@ func (s *scene) draw(c canvas) {
 }
 
 func (s *scene) drawPlayer(c canvas, m [16]float32, w, h float32, p *Player, mate bool) {
-	boxColor := colorCT
+	boxColor := s.palette.CT
 	if p.Team == 2 {
-		boxColor = colorT
+		boxColor = s.palette.T
 	}
 
 	minX, minY := float32(math.MaxFloat32), float32(math.MaxFloat32)
@@ -245,42 +271,55 @@ func (s *scene) drawPlayer(c canvas, m [16]float32, w, h float32, p *Player, mat
 	minY -= pad * 2
 	maxY += pad
 
-	// box
-	c.Rect(minX, minY, maxX-minX, 1.5, boxColor)
-	c.Rect(minX, maxY-1.5, maxX-minX, 1.5, boxColor)
-	c.Rect(minX, minY, 1.5, maxY-minY, boxColor)
-	c.Rect(maxX-1.5, minY, 1.5, maxY-minY, boxColor)
+	if s.display.Boxes {
+		// box
+		c.Rect(minX, minY, maxX-minX, 1.5, boxColor)
+		c.Rect(minX, maxY-1.5, maxX-minX, 1.5, boxColor)
+		c.Rect(minX, minY, 1.5, maxY-minY, boxColor)
+		c.Rect(maxX-1.5, minY, 1.5, maxY-minY, boxColor)
 
-	// skeleton
-	skeletonColor := color.RGBA{boxColor.R, boxColor.G, boxColor.B, 160}
-	for _, conn := range skeletonConnections {
-		a, okA := projected[conn[0]]
-		b, okB := projected[conn[1]]
-		if !okA || !okB {
-			continue
+	}
+
+	if s.display.Skeleton {
+		// skeleton
+		skeletonColor := color.RGBA{boxColor.R, boxColor.G, boxColor.B, 160}
+		for _, conn := range skeletonConnections {
+			a, okA := projected[conn[0]]
+			b, okB := projected[conn[1]]
+			if !okA || !okB {
+				continue
+			}
+			c.Line(a.X, a.Y, b.X, b.Y, skeletonColor)
 		}
-		c.Line(a.X, a.Y, b.X, b.Y, skeletonColor)
+
 	}
 
-	// health
-	health := float32(p.Health)
-	if health > 100 {
-		health = 100
+	if s.display.Health {
+		// health
+		health := float32(p.Health)
+		if health > 100 {
+			health = 100
+		}
+		barH := maxY - minY
+		barColor := s.palette.Health
+		if health <= 35 {
+			barColor = s.palette.HealthLow
+		}
+		c.Rect(minX-6, minY, 3, barH, color.RGBA{40, 42, 48, 255})
+		c.Rect(minX-6, maxY-barH*(health/100), 3, barH*(health/100), barColor)
+
 	}
-	barH := maxY - minY
-	barColor := colorHealth
-	if health <= 35 {
-		barColor = colorHealthLow
+
+	if !s.display.Names {
+		return
 	}
-	c.Rect(minX-6, minY, 3, barH, color.RGBA{40, 42, 48, 255})
-	c.Rect(minX-6, maxY-barH*(health/100), 3, barH*(health/100), barColor)
 
 	// name + flags
 	label := p.Name
 	if p.Bot() {
 		label = "[bot] " + label
 	}
-	c.Text(minX, minY-14, truncate(label, 24), color.RGBA{235, 235, 240, 255})
+	c.Text(minX, minY-14, truncate(label, 24), s.palette.Name)
 
 	flags := ""
 	if p.Scoped() {

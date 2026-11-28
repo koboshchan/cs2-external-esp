@@ -355,6 +355,11 @@ namespace net
 	{
 		Publisher& self = Get();
 		std::string error;
+		g_client.Close();
+		self.connected_ = false;
+		self.authenticated_ = false;
+		self.rejected_ = false;
+		g_viewers = -1;
 
 		// Must be installed before Connect: the receive thread starts there.
 		g_client.SetOnMessage([](bool binary, const uint8_t* data, size_t size)
@@ -365,25 +370,37 @@ namespace net
 			const std::string text(reinterpret_cast<const char*>(data), size);
 			LOGF(INFO, "[net] relay: {}", text);
 
-			if (text.find("\"viewers\"") != std::string::npos)
+			try
 			{
-				try
+				const auto parsed = nlohmann::json::parse(text);
+				const std::string type = parsed.value("t", std::string{});
+				Publisher& p = Get();
+				if (type == "welcome" && parsed.value("role", std::string{}) == "host")
 				{
-					const nlohmann::json parsed = nlohmann::json::parse(text);
-					if (parsed.contains("count") && parsed["count"].is_number_integer())
-						g_viewers.store(parsed["count"].get<int>());
+					g_viewers = parsed.value("viewers", 0);
+					{
+						std::lock_guard<std::mutex> lock(p.message_mutex_);
+						p.last_message_.clear();
+					}
+					p.authenticated_ = true;
 				}
-				catch (...)
+				else if (type == "viewers")
 				{
+					g_viewers = parsed.at("count").get<int>();
+				}
+				else if (type == "error")
+				{
+					p.last_error_++;
+					{
+						std::lock_guard<std::mutex> lock(p.message_mutex_);
+						p.last_message_ = text;
+					}
+					p.rejected_ = true;
 				}
 			}
-
-			if (text.find("\"error\"") != std::string::npos)
+			catch (const nlohmann::json::exception&)
 			{
-				Publisher& p = Get();
-				p.last_error_++;
-				std::lock_guard<std::mutex> lock(p.message_mutex_);
-				p.last_message_ = text;
+				LOGF(WARNING, "[net] invalid relay control message");
 			}
 		});
 
@@ -405,9 +422,18 @@ namespace net
 			return false;
 		}
 
-		// Give the relay a moment to accept or reject us.
-		std::this_thread::sleep_for(std::chrono::milliseconds(150));
-		self.connected_ = g_client.IsConnected();
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (self.running_ && g_client.IsConnected() && !self.authenticated_ && !self.rejected_ &&
+			std::chrono::steady_clock::now() < deadline)
+			std::this_thread::sleep_for(std::chrono::milliseconds(25));
+		self.connected_ = self.authenticated_ && !self.rejected_ && g_client.IsConnected();
+		if (!self.connected_)
+		{
+			g_client.Close();
+			std::lock_guard<std::mutex> lock(self.message_mutex_);
+			if (self.last_message_.empty())
+				self.last_message_ = "relay authentication failed or timed out";
+		}
 
 		if (self.connected_)
 			LOGF(INFO, "[net] connected to relay, room {}", self.room_);
@@ -549,7 +575,8 @@ namespace net
 
 		while (std::chrono::steady_clock::now() < end)
 		{
-			const Frame frame = BuildSyntheticFrame(seq++, static_cast<int>(seq));
+			const Frame frame = BuildSyntheticFrame(seq, static_cast<int>(seq));
+			++seq;
 
 			std::string error;
 			if (!Validate(frame, &error))

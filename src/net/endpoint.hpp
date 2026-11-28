@@ -20,6 +20,10 @@ namespace net
 	// returns a websocket URL with a path (defaults to /ws).
 	inline std::string NormalizeWsUrl(std::string url)
 	{
+		const auto first = url.find_first_not_of(" \t\r\n");
+		if (first == std::string::npos)
+			return {};
+		url = url.substr(first, url.find_last_not_of(" \t\r\n") - first + 1);
 		std::string scheme = "wss://";
 		std::string rest;
 
@@ -84,7 +88,8 @@ namespace net
 		if (raw.empty())
 			return "wss://cs2.kjt.lol/ws";
 
-		return NormalizeWsUrl(raw);
+		const std::string normalized = NormalizeWsUrl(raw);
+		return normalized.empty() ? "wss://cs2.kjt.lol/ws" : normalized;
 	}
 
 	// https://host from wss://host/ws, used for POST /rooms.

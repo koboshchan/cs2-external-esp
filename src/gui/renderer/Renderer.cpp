@@ -4,8 +4,8 @@
 #include "core/engine/Engine.hpp"
 #include "gui/frontend/esp/Esp.hpp"
 #include "gui/frontend/menu/Menu.hpp"
-#include "gui\frontend\overlays\Overlays.hpp"
-#include "core\scripting\Scripting.hpp"
+#include "gui/frontend/overlays/Overlays.hpp"
+#include "core/scripting/Scripting.hpp"
 #include "gui/frontend/theme/Theme.hpp"
 
 bool Renderer::Init() {

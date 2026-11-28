@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -45,19 +46,37 @@ func loadConfig() viewerConfig {
 }
 
 func saveConfig(c viewerConfig) {
-	path := configPath()
+	_ = saveJSONFile(configPath(), c)
+}
+
+func saveJSONFile(path string, value any) error {
 	if path == "" {
-		return
+		return fmt.Errorf("无法确定设置保存位置")
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
+		return err
 	}
 
-	raw, err := json.MarshalIndent(c, "", "  ")
+	raw, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
-		return
+		return err
 	}
 
-	_ = os.WriteFile(path, raw, 0o600)
+	file, err := os.CreateTemp(filepath.Dir(path), ".config-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	defer file.Close()
+	if _, err := file.Write(raw); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), path)
 }
